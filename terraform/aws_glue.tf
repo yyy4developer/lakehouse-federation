@@ -1,121 +1,91 @@
 # =============================================================================
-# AWS Glue Catalog Database & Tables
-# Master data tables backed by CSV files on S3
+# AWS Glue カタログ データベース & テーブル
+# 工場マスタデータ（Parquet, Delta, Iceberg形式）
+#
+# テーブル登録方針:
+#   - sensors（Parquet）:             Terraform管理（aws_glue_catalog_table）
+#   - machines（Delta）:              ETLジョブ管理（boto3でSparkデータソース形式登録）
+#   - quality_inspections（Iceberg）: ETLジョブ管理（writeTo + Glueカタログ）
+#
+# Delta・Icebergテーブルは、適切なメタデータ（Delta _delta_log、
+# Iceberg metadata_location）を確保するためにGlue ETLジョブで登録する。
 # =============================================================================
 
 resource "aws_glue_catalog_database" "factory_master" {
-  name        = local.glue_database_name
-  description = "Factory master data for Lakehouse Federation demo"
+  name         = local.glue_database_name
+  description  = "Lakehouse Federationデモ用の工場マスタデータ - センサー、機械、品質検査データを格納"
+  location_uri = "s3://${aws_s3_bucket.glue_data.id}/factory_master/"
 }
 
 # -----------------------------------------------------------------------------
-# Table: sensors (20 rows) - Sensor metadata
+# テーブル: sensors（Parquet, 20行）- センサーマスタデータ
+# Terraformでテーブル定義を管理。データはGlue ETLジョブで生成。
 # -----------------------------------------------------------------------------
 
 resource "aws_glue_catalog_table" "sensors" {
   database_name = aws_glue_catalog_database.factory_master.name
   name          = "sensors"
+  description   = "センサーマスタデータ - 工場内全センサーの種類、単位、設置場所を管理するレジストリ"
 
   table_type = "EXTERNAL_TABLE"
 
   parameters = {
-    "classification"         = "csv"
-    "skip.header.line.count" = "1"
-    "typeOfData"             = "file"
+    "classification" = "parquet"
+    "typeOfData"     = "file"
   }
 
   storage_descriptor {
     location      = "s3://${aws_s3_bucket.glue_data.id}/factory_master/sensors/"
-    input_format  = "org.apache.hadoop.mapred.TextInputFormat"
-    output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+    input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
     ser_de_info {
-      serialization_library = "org.apache.hadoop.hive.serde2.OpenCSVSerde"
+      serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
       parameters = {
-        "separatorChar" = ","
-        "quoteChar"     = "\""
+        "serialization.format" = "1"
       }
     }
 
     columns {
-      name = "sensor_id"
-      type = "int"
+      name    = "sensor_id"
+      type    = "int"
+      comment = "センサーの一意識別子"
     }
     columns {
-      name = "sensor_name"
-      type = "string"
+      name    = "sensor_name"
+      type    = "string"
+      comment = "センサーのモデル/コード名（例：TMP-A01）"
     }
     columns {
-      name = "sensor_type"
-      type = "string"
+      name    = "sensor_type"
+      type    = "string"
+      comment = "測定種類：温度、圧力、振動、湿度、流量、回転数"
     }
     columns {
-      name = "unit"
-      type = "string"
+      name    = "unit"
+      type    = "string"
+      comment = "測定単位（℃、bar、mm/s、%、l/min、rpm）"
     }
     columns {
-      name = "location"
-      type = "string"
+      name    = "location"
+      type    = "string"
+      comment = "工場内の物理的な設置場所"
     }
     columns {
-      name = "installed_date"
-      type = "string"
+      name    = "installed_date"
+      type    = "string"
+      comment = "センサー設置日（YYYY-MM-DD形式）"
     }
   }
 
-  depends_on = [aws_s3_object.sensors_csv]
+  depends_on = [null_resource.run_glue_job]
 }
 
 # -----------------------------------------------------------------------------
-# Table: machines (10 rows) - Machine metadata
+# Glue ETLジョブで管理されるテーブル（Terraform管理外）:
+#   - machines（Delta）             → boto3でSparkデータソース形式として登録
+#   - quality_inspections（Iceberg）→ Spark Icebergカタログ経由で登録
+#
+# テーブル説明・カラムコメントはETLジョブスクリプト
+# （scripts/generate_data.py）内で設定。
 # -----------------------------------------------------------------------------
-
-resource "aws_glue_catalog_table" "machines" {
-  database_name = aws_glue_catalog_database.factory_master.name
-  name          = "machines"
-
-  table_type = "EXTERNAL_TABLE"
-
-  parameters = {
-    "classification"         = "csv"
-    "skip.header.line.count" = "1"
-    "typeOfData"             = "file"
-  }
-
-  storage_descriptor {
-    location      = "s3://${aws_s3_bucket.glue_data.id}/factory_master/machines/"
-    input_format  = "org.apache.hadoop.mapred.TextInputFormat"
-    output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
-
-    ser_de_info {
-      serialization_library = "org.apache.hadoop.hive.serde2.OpenCSVSerde"
-      parameters = {
-        "separatorChar" = ","
-        "quoteChar"     = "\""
-      }
-    }
-
-    columns {
-      name = "machine_id"
-      type = "int"
-    }
-    columns {
-      name = "machine_name"
-      type = "string"
-    }
-    columns {
-      name = "production_line"
-      type = "string"
-    }
-    columns {
-      name = "factory"
-      type = "string"
-    }
-    columns {
-      name = "status"
-      type = "string"
-    }
-  }
-
-  depends_on = [aws_s3_object.machines_csv]
-}

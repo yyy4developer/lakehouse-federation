@@ -15,26 +15,48 @@ AWS Glue と Amazon Redshift のデータに対して、Databricks から Lakeho
 └───────────┼─────────────────────┼───────────────────────────────┘
             │                     │
             ▼                     ▼
-┌───────────────────┐   ┌────────────────────────┐
-│   AWS Glue        │   │  Redshift Serverless   │
-│ ┌───────────────┐ │   │ ┌────────────────────┐ │
-│ │ sensors (20)  │ │   │ │ sensor_readings    │ │
-│ │ machines (10) │ │   │ │ (100 rows)         │ │
-│ └───────┬───────┘ │   │ │ production_events  │ │
-│         │ S3      │   │ │ (30 rows)          │ │
-│         ▼         │   │ └────────────────────┘ │
-│  ┌────────────┐   │   └────────────────────────┘
-│  │  S3 Bucket │   │
-│  │  (CSV)     │   │
-│  └────────────┘   │
-└───────────────────┘
+┌───────────────────────┐   ┌────────────────────────┐
+│   AWS Glue            │   │  Redshift Serverless   │
+│ ┌───────────────────┐ │   │ ┌────────────────────┐ │
+│ │ sensors (Parquet) │ │   │ │ sensor_readings    │ │
+│ │ machines (Delta)  │ │   │ │ (100 rows)         │ │
+│ │ quality_insp.     │ │   │ │ production_events  │ │
+│ │ (Iceberg)         │ │   │ │ (30 rows)          │ │
+│ └───────┬───────────┘ │   │ │ quality_inspections│ │
+│         │ S3          │   │ │ (40 rows)          │ │
+│         ▼             │   │ └────────────────────┘ │
+│  ┌────────────────┐   │   └────────────────────────┘
+│  │  S3 Bucket     │   │
+│  │  Parquet/Delta │   │
+│  │  /Iceberg      │   │
+│  └────────────────┘   │
+└───────────────────────┘
 ```
 
-**データテーマ: 工場生産センサーデータ**
+**データテーマ: 工場生産センサー・品質データ**
 
-- **Glue (マスターデータ)**: sensors（センサー情報）, machines（機械情報）
-- **Redshift (トランザクションデータ)**: sensor_readings（センサー読取値）, production_events（生産イベント）
-- **Cross-source JOIN キー**: `sensor_id`, `machine_id`
+### Glue テーブル（マスターデータ + 品質検査）
+
+| テーブル | フォーマット | 行数 | 説明 |
+|---------|-------------|------|------|
+| `sensors` | **Parquet** | 20 | センサーマスタ（型、単位、設置場所） |
+| `machines` | **Delta** | 10 | 機械マスタ（ライン、工場、稼働状態） |
+| `quality_inspections` | **Iceberg** | 50 | 品質検査結果（合否、欠陥数） |
+
+### Redshift テーブル（トランザクションデータ + 品質検査）
+
+| テーブル | 行数 | 説明 |
+|---------|------|------|
+| `sensor_readings` | 100 | センサー読取値（時系列） |
+| `production_events` | 30 | 生産イベント（起動/停止/メンテナンス/エラー） |
+| `quality_inspections` | 40 | 品質検査結果（合否、欠陥数） |
+
+**Cross-source JOIN キー**: `sensor_id`, `machine_id`
+
+### メタデータ
+
+全テーブルに **テーブル説明** と **カラムコメント** を付与しています。
+Databricks から `DESCRIBE TABLE EXTENDED` で確認可能です。
 
 ## 前提条件
 
@@ -113,7 +135,7 @@ terraform plan
 terraform apply
 ```
 
-> **所要時間**: 約 5-10 分（Redshift Serverless の起動に時間がかかります）
+> **所要時間**: 約 10-15 分（Redshift Serverless の起動 + Glue ETL Job の実行に時間がかかります）
 
 デプロイ完了後、以下が出力されます:
 
@@ -121,6 +143,7 @@ terraform apply
 Outputs:
   databricks_glue_catalog     = "glue_factory"
   databricks_redshift_catalog = "redshift_factory"
+  glue_etl_job_name           = "lhf-demo-data-generator"
   redshift_endpoint           = "lhf-demo-wg.XXXXX.us-west-2.redshift-serverless.amazonaws.com"
   ...
 ```
@@ -137,28 +160,43 @@ Outputs:
 ## デモクエリのハイライト
 
 ### Single-source クエリ
-- Glue: `SELECT * FROM glue_factory.lhf_demo_factory_master.sensors`
+- Glue (Parquet): `SELECT * FROM glue_factory.lhf_demo_factory_master.sensors`
+- Glue (Delta): `SELECT * FROM glue_factory.lhf_demo_factory_master.machines`
+- Glue (Iceberg): `SELECT * FROM glue_factory.lhf_demo_factory_master.quality_inspections`
 - Redshift: `SELECT * FROM redshift_factory.public.sensor_readings`
+
+### メタデータ確認
+```sql
+-- テーブル説明とカラムコメントを確認
+DESCRIBE TABLE EXTENDED glue_factory.lhf_demo_factory_master.sensors;
+DESCRIBE TABLE EXTENDED redshift_factory.public.sensor_readings;
+```
 
 ### Cross-source JOIN (Glue + Redshift)
 ```sql
--- センサーマスタ (Glue) + センサー読取値 (Redshift)
--- ※ Glue の OpenCSVSerde は全カラムを STRING で返すため try_cast を使用
+-- センサーマスタ (Glue/Parquet) + センサー読取値 (Redshift)
+-- ※ Parquet/Delta/Iceberg は正しい型を返すため try_cast は不要
 SELECT s.sensor_name, s.sensor_type, r.value, r.status
 FROM glue_factory.lhf_demo_factory_master.sensors s
 JOIN redshift_factory.public.sensor_readings r
-  ON try_cast(s.sensor_id AS INT) = r.sensor_id
+  ON s.sensor_id = r.sensor_id
 WHERE r.status IN ('warning', 'critical');
 ```
 
-### 4テーブル結合 (全データソース横断)
+### 品質検査クロスソース比較 (Glue/Iceberg + Redshift)
 ```sql
--- machines (Glue) + sensor_readings (Redshift) + sensors (Glue) + production_events (Redshift)
-SELECT m.machine_name, s.sensor_name, r.value, r.status
-FROM glue_factory.lhf_demo_factory_master.machines m
-JOIN redshift_factory.public.sensor_readings r ON try_cast(m.machine_id AS INT) = r.machine_id
-JOIN glue_factory.lhf_demo_factory_master.sensors s ON r.sensor_id = try_cast(s.sensor_id AS INT)
-WHERE r.status != 'normal';
+-- Glue (Iceberg) と Redshift の品質検査結果を統合
+SELECT machine_id, result, defect_count, 'Glue' AS source
+FROM glue_factory.lhf_demo_factory_master.quality_inspections
+UNION ALL
+SELECT machine_id, result, defect_count, 'Redshift' AS source
+FROM redshift_factory.public.quality_inspections;
+```
+
+### Machine Health Dashboard (全6テーブル結合)
+```sql
+-- センサー異常 + 稼働イベント + 品質検査 の統合ダッシュボード
+-- 詳細はノートブックの Section 16 を参照
 ```
 
 ## クリーンアップ
@@ -185,7 +223,7 @@ terraform destroy
 
 ### "External location validation failed"
 - Storage Credential の IAM ロールが S3 バケットへの read アクセス権を持っているか確認
-- S3 バケットに CSV ファイルがアップロードされているか確認
+- Glue ETL Job が完了してデータが S3 に書き込まれているか確認
 
 ### "Insufficient Lake Formation permission(s)" (Glue)
 - AWS Lake Formation が有効なアカウントでは、IAM ポリシーに加えて Lake Formation 権限が必要です
@@ -203,10 +241,13 @@ terraform destroy
 - Glue テーブルの S3 ロケーションが正しいか確認
 - Foreign Catalog の `authorized_paths` が S3 パスをカバーしているか確認
 
-### CAST エラー (Glue テーブル)
-- Glue の `OpenCSVSerde` は全カラムを STRING として返します
-- ヘッダー行もデータとして読まれるため、`CAST` ではなく `try_cast` を使用してください
-- `try_cast` は変換できない値を NULL にし、JOIN で自動的に除外されます
+### Glue ETL Job が失敗する
+- CloudWatch Logs でジョブのログを確認:
+  ```bash
+  aws glue get-job-runs --job-name lhf-demo-data-generator --region us-west-2
+  ```
+- IAM ロールに S3, Glue, CloudWatch の権限があるか確認
+- Lake Formation のデータアクセス権限が付与されているか確認
 
 ### Redshift テーブルにデータがない
 - `aws_redshiftdata_statement` が正常完了したか確認:
@@ -237,24 +278,27 @@ lakehouse_federation/
 │   ├── aws_networking.tf          # VPC, Subnets, Security Groups
 │   ├── aws_s3.tf                  # S3バケット (Glueデータ格納)
 │   ├── aws_iam.tf                 # IAMロール (Glue API + S3読取)
-│   ├── aws_glue.tf                # Glue Database & Tables
+│   ├── aws_glue.tf                # Glue Database & Tables (Parquet/Delta/Iceberg)
+│   ├── aws_glue_etl.tf            # Glue ETL Job (データ生成)
 │   ├── aws_redshift.tf            # Redshift Serverless
-│   ├── aws_redshift_data.tf       # Redshift DDL/DML実行
+│   ├── aws_redshift_data.tf       # Redshift DDL/DML/Comments実行
+│   ├── aws_lakeformation.tf       # Lake Formation権限 (IAM_ALLOWED_PRINCIPALS)
 │   ├── databricks_credentials.tf  # Service / Storage Credentials
 │   ├── databricks_external.tf     # External Location
 │   ├── databricks_connection.tf   # Connections (Glue, Redshift)
-│   ├── databricks_catalog.tf      # Foreign Catalogs
-│   ├── aws_lakeformation.tf      # Lake Formation権限 (IAM_ALLOWED_PRINCIPALS)
-│   ├── data/
-│   │   ├── sensors.csv            # センサーマスタ (20行)
-│   │   └── machines.csv           # 機械マスタ (10行)
+│   ├── databricks_catalog.tf      # Foreign Catalogs (with storage_root)
+│   ├── scripts/
+│   │   └── generate_data.py       # PySpark ETLスクリプト (Parquet/Delta/Iceberg生成)
 │   └── sql/
 │       ├── create_sensor_readings.sql
 │       ├── create_production_events.sql
+│       ├── create_quality_inspections.sql
 │       ├── insert_sensor_readings.sql
-│       └── insert_production_events.sql
+│       ├── insert_production_events.sql
+│       ├── insert_quality_inspections.sql
+│       └── comments.sql            # テーブル/カラムコメント (Redshift)
 ├── notebooks/
-│   └── federation_demo.sql        # デモクエリノートブック
+│   └── federation_demo.sql        # デモクエリノートブック (16セクション)
 ├── .gitignore
 └── README.md
 ```

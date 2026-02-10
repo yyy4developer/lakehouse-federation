@@ -7,6 +7,7 @@
 # Foreign Catalog: AWS Glue (factory master data)
 # Mirrors the Glue database as a Unity Catalog catalog.
 # Authorized paths restrict which S3 locations can be accessed.
+# storage_root provides a location for foreign catalog metadata.
 # -----------------------------------------------------------------------------
 
 resource "databricks_catalog" "glue" {
@@ -14,10 +15,12 @@ resource "databricks_catalog" "glue" {
   connection_name = databricks_connection.glue.name
 
   options = {
-    authorized_paths = "s3://${aws_s3_bucket.glue_data.id}/factory_master"
+    authorized_paths = "s3://${aws_s3_bucket.glue_data.id}"
   }
 
-  comment = "Foreign catalog: AWS Glue factory master data (sensors, machines)"
+  storage_root = "s3://${aws_s3_bucket.glue_data.id}/glue_factory_metadata"
+
+  comment = "外部カタログ: AWS Glue 工場マスタデータ（sensors [Parquet], machines [Delta], quality_inspections [Iceberg]）"
 
   depends_on = [databricks_external_location.glue_data]
 }
@@ -35,5 +38,5 @@ resource "databricks_catalog" "redshift" {
     database = "factory_db"
   }
 
-  comment = "Foreign catalog: Redshift factory transaction data (sensor_readings, production_events)"
+  comment = "外部カタログ: Redshift 工場トランザクションデータ（sensor_readings, production_events, quality_inspections）"
 }

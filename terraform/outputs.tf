@@ -34,6 +34,11 @@ output "storage_iam_role_arn" {
   value       = aws_iam_role.databricks_storage.arn
 }
 
+output "glue_etl_job_name" {
+  description = "Glue ETL job name for data generation"
+  value       = aws_glue_job.data_generator.name
+}
+
 # ----- Databricks -----
 
 output "databricks_glue_catalog" {

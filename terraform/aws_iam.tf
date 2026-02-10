@@ -100,7 +100,7 @@ resource "aws_iam_role" "databricks_storage" {
 }
 
 resource "aws_iam_role_policy" "s3_read_access" {
-  name = "${var.project_prefix}-s3-read"
+  name = "${var.project_prefix}-s3-access"
   role = aws_iam_role.databricks_storage.id
 
   policy = jsonencode({
@@ -118,6 +118,17 @@ resource "aws_iam_role_policy" "s3_read_access" {
         Resource = [
           aws_s3_bucket.glue_data.arn,
           "${aws_s3_bucket.glue_data.arn}/*",
+        ]
+      },
+      {
+        Sid    = "S3WriteAccessForCatalogMetadata"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:DeleteObject",
+        ]
+        Resource = [
+          "${aws_s3_bucket.glue_data.arn}/glue_factory_metadata/*",
         ]
       },
       {

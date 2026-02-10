@@ -18,7 +18,7 @@ resource "aws_redshiftserverless_workgroup" "demo" {
   workgroup_name = "${var.project_prefix}-wg"
   namespace_name = aws_redshiftserverless_namespace.demo.namespace_name
 
-  base_capacity       = 8   # Minimum RPUs for cost savings
+  base_capacity       = 8    # Minimum RPUs for cost savings
   publicly_accessible = true # Required for Databricks federation via public endpoint
 
   subnet_ids         = aws_subnet.public[*].id
