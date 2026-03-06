@@ -71,7 +71,7 @@ resource "databricks_catalog" "synapse" {
 # Query Federation: BigQuery
 # -----------------------------------------------------------------------------
 resource "databricks_catalog" "bigquery" {
-  count           = var.enable_bigquery ? 1 : 0
+  count           = var.enable_bigquery && var.gcp_credentials_json != "" ? 1 : 0
   name            = "${var.catalog_prefix_query}_bigquery"
   connection_name = databricks_connection.bigquery[0].name
 

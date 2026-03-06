@@ -19,6 +19,7 @@ resource "azurerm_postgresql_flexible_server" "postgres" {
 
   tags = {
     Project = "lakehouse-federation-demo"
+    owner   = "yunyi.yao@databricks.com"
   }
 }
 

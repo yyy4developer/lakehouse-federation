@@ -15,6 +15,7 @@ resource "azurerm_storage_account" "synapse" {
 
   tags = {
     Project = "lakehouse-federation-demo"
+    owner   = "yunyi.yao@databricks.com"
   }
 }
 
@@ -41,6 +42,7 @@ resource "azurerm_synapse_workspace" "demo" {
 
   tags = {
     Project = "lakehouse-federation-demo"
+    owner   = "yunyi.yao@databricks.com"
   }
 }
 

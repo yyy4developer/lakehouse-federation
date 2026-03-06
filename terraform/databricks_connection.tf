@@ -64,7 +64,6 @@ resource "databricks_connection" "synapse" {
     port     = "1433"
     user     = "sqladmin"
     password = var.synapse_admin_password
-    database = "factory_analytics"
   }
 
   comment = "Connection to Azure Synapse Analytics"
@@ -72,13 +71,13 @@ resource "databricks_connection" "synapse" {
 
 # Google BigQuery (Query Federation)
 resource "databricks_connection" "bigquery" {
-  count           = var.enable_bigquery ? 1 : 0
+  count           = var.enable_bigquery && var.gcp_credentials_json != "" ? 1 : 0
   name            = "${var.project_prefix}-bigquery-conn"
   connection_type = "BIGQUERY"
 
   options = {
     GoogleServiceAccountKeyJson = var.gcp_credentials_json
-    ProjectId                   = var.gcp_project_id
+    projectId                   = var.gcp_project_id
   }
 
   comment = "Connection to Google BigQuery"

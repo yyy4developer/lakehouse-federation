@@ -52,7 +52,7 @@ output "databricks_catalogs" {
     var.enable_redshift ? { redshift = databricks_catalog.redshift[0].name } : {},
     var.enable_postgres ? { postgres = databricks_catalog.postgres[0].name } : {},
     var.enable_synapse ? { synapse = databricks_catalog.synapse[0].name } : {},
-    var.enable_bigquery ? { bigquery = databricks_catalog.bigquery[0].name } : {},
+    var.enable_bigquery && var.gcp_credentials_json != "" ? { bigquery = databricks_catalog.bigquery[0].name } : {},
     var.enable_onelake ? { onelake = databricks_catalog.onelake[0].name } : {},
   )
 }

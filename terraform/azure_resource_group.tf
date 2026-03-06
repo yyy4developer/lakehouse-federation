@@ -11,5 +11,6 @@ resource "azurerm_resource_group" "demo" {
   tags = {
     Project   = "lakehouse-federation-demo"
     ManagedBy = "terraform"
+    owner     = "yunyi.yao@databricks.com"
   }
 }
