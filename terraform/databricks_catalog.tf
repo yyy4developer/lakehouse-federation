@@ -61,7 +61,7 @@ resource "databricks_catalog" "synapse" {
   connection_name = databricks_connection.synapse[0].name
 
   options = {
-    database = "factory_analytics"
+    database = "master"
   }
 
   comment = "外部カタログ: Azure Synapse シフト・電力データ（shift_schedules, energy_consumption）"
@@ -76,7 +76,7 @@ resource "databricks_catalog" "bigquery" {
   connection_name = databricks_connection.bigquery[0].name
 
   options = {
-    project_id = var.gcp_project_id
+    dataProjectId = var.gcp_project_id
   }
 
   comment = "外部カタログ: BigQuery 稼働停止・コストデータ（downtime_records, cost_allocation）"
