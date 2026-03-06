@@ -25,11 +25,19 @@ terraform {
   }
 }
 
+locals {
+  skip_aws = !(var.enable_glue || var.enable_redshift || (var.enable_postgres && var.cloud == "aws"))
+  skip_gcp = !var.enable_bigquery
+}
+
 # -----------------------------------------------------------------------------
 # AWS Provider
 # -----------------------------------------------------------------------------
 provider "aws" {
-  region = var.aws_region
+  region                      = var.aws_region
+  skip_credentials_validation = local.skip_aws
+  skip_requesting_account_id  = local.skip_aws
+  skip_metadata_api_check     = local.skip_aws
 
   default_tags {
     tags = {
@@ -44,14 +52,15 @@ provider "aws" {
 # -----------------------------------------------------------------------------
 provider "azurerm" {
   features {}
-  subscription_id = var.azure_subscription_id
+  subscription_id                 = var.azure_subscription_id != "" ? var.azure_subscription_id : "00000000-0000-0000-0000-000000000000"
+  resource_provider_registrations = "none"
 }
 
 # -----------------------------------------------------------------------------
 # Google Cloud Provider
 # -----------------------------------------------------------------------------
 provider "google" {
-  project     = var.gcp_project_id
+  project     = local.skip_gcp ? "unused" : var.gcp_project_id
   region      = var.gcp_region
   credentials = var.gcp_credentials_json != "" ? var.gcp_credentials_json : null
 }

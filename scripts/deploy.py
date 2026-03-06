@@ -121,12 +121,14 @@ def get_catalog_prefix() -> tuple[str, str]:
     return query_prefix, catalog_prefix
 
 
-def check_cloud_auth(cloud: str, sources: list[str]):
-    """Check and guide cloud authentication."""
+def check_cloud_auth(cloud: str, sources: list[str]) -> dict:
+    """Check and guide cloud authentication. Returns auto-detected values."""
     console.print("\n[bold]認証チェック...[/bold]")
+    creds_out = {}
 
     # AWS check
-    if cloud == "aws" or any(s in sources for s in ["glue", "redshift", "postgres"]):
+    needs_aws = cloud == "aws" or any(s in sources for s in ["glue", "redshift"])
+    if needs_aws or ("postgres" in sources and cloud == "aws"):
         try:
             result = subprocess.run(
                 ["aws", "sts", "get-caller-identity"],
@@ -135,9 +137,27 @@ def check_cloud_auth(cloud: str, sources: list[str]):
             if result.returncode == 0:
                 console.print("  [green]✓[/green] AWS 認証済み")
             else:
-                console.print("  [red]✗[/red] AWS 未認証 — [yellow]aws configure[/yellow] を実行してください")
-                if not questionary.confirm("続行しますか?", default=False).ask():
-                    sys.exit(1)
+                # Try to find an SSO profile
+                console.print("  [yellow]![/yellow] AWS 未認証 — SSO プロファイルを検索中...")
+                profile = questionary.text(
+                    "AWS SSO profile name (例: aws-sandbox-field-eng_databricks-sandbox-admin):",
+                ).ask()
+                if profile:
+                    os.environ["AWS_PROFILE"] = profile
+                    result = subprocess.run(
+                        ["aws", "sso", "login", "--profile", profile],
+                        timeout=120,
+                    )
+                    if result.returncode != 0:
+                        console.print("  [red]✗[/red] AWS SSO login 失敗")
+                        if not questionary.confirm("続行しますか?", default=False).ask():
+                            sys.exit(1)
+                    else:
+                        console.print(f"  [green]✓[/green] AWS 認証済み (profile: {profile})")
+                else:
+                    console.print("  [red]✗[/red] AWS 未認証 — [yellow]aws configure[/yellow] を実行してください")
+                    if not questionary.confirm("続行しますか?", default=False).ask():
+                        sys.exit(1)
         except FileNotFoundError:
             console.print("  [yellow]![/yellow] aws CLI が見つかりません")
 
@@ -145,11 +165,13 @@ def check_cloud_auth(cloud: str, sources: list[str]):
     if any(s in sources for s in ["synapse", "onelake"]) or (cloud == "azure" and "postgres" in sources):
         try:
             result = subprocess.run(
-                ["az", "account", "show"],
+                ["az", "account", "show", "--query", "id", "-o", "tsv"],
                 capture_output=True, text=True, timeout=10,
             )
-            if result.returncode == 0:
-                console.print("  [green]✓[/green] Azure 認証済み")
+            if result.returncode == 0 and result.stdout.strip():
+                sub_id = result.stdout.strip()
+                console.print(f"  [green]✓[/green] Azure 認証済み (subscription: {sub_id})")
+                creds_out["azure_subscription_id"] = sub_id
             else:
                 console.print("  [red]✗[/red] Azure 未認証 — [yellow]az login[/yellow] を実行してください")
                 if not questionary.confirm("続行しますか?", default=False).ask():
@@ -174,11 +196,12 @@ def check_cloud_auth(cloud: str, sources: list[str]):
             console.print("  [yellow]![/yellow] gcloud CLI が見つかりません")
 
     console.print()
+    return creds_out
 
 
-def collect_credentials(cloud: str, sources: list[str]) -> dict:
+def collect_credentials(cloud: str, sources: list[str], auto_creds: dict | None = None) -> dict:
     """Collect passwords and credentials per source."""
-    creds = {}
+    creds = dict(auto_creds or {})
 
     if "redshift" in sources:
         creds["redshift_admin_password"] = questionary.password(
@@ -194,10 +217,11 @@ def collect_credentials(cloud: str, sources: list[str]) -> dict:
         creds["synapse_admin_password"] = questionary.password(
             "Azure Synapse admin password:",
         ).ask()
-        creds["azure_subscription_id"] = questionary.text(
-            "Azure subscription ID:",
-            validate=lambda x: len(x) > 0 or "必須です",
-        ).ask()
+        if "azure_subscription_id" not in creds:
+            creds["azure_subscription_id"] = questionary.text(
+                "Azure subscription ID:",
+                validate=lambda x: len(x) > 0 or "必須です",
+            ).ask()
 
     if "onelake" in sources:
         if "azure_subscription_id" not in creds:
@@ -352,9 +376,9 @@ def main():
     workspace_url = get_workspace_url()
     sources = select_sources(cloud)
     query_prefix, catalog_prefix = get_catalog_prefix()
-    check_cloud_auth(cloud, sources)
+    auto_creds = check_cloud_auth(cloud, sources)
     setup_databricks_auth(workspace_url)
-    creds = collect_credentials(cloud, sources)
+    creds = collect_credentials(cloud, sources, auto_creds)
 
     # Confirm
     console.print("\n[bold]Configuration Summary:[/bold]")
