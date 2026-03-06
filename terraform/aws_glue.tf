@@ -1,29 +1,24 @@
 # =============================================================================
-# AWS Glue カタログ データベース & テーブル
-# 工場マスタデータ（Parquet, Delta, Iceberg形式）
-#
-# テーブル登録方針:
-#   - sensors（Parquet）:             Terraform管理（aws_glue_catalog_table）
-#   - machines（Delta）:              ETLジョブ管理（boto3でSparkデータソース形式登録）
-#   - quality_inspections（Iceberg）: ETLジョブ管理（writeTo + Glueカタログ）
-#
-# Delta・Icebergテーブルは、適切なメタデータ（Delta _delta_log、
-# Iceberg metadata_location）を確保するためにGlue ETLジョブで登録する。
+# AWS Glue Catalog Database & Tables
+# Factory master data (Parquet, Delta, Iceberg)
 # =============================================================================
 
 resource "aws_glue_catalog_database" "factory_master" {
+  count = var.enable_glue ? 1 : 0
+
   name         = local.glue_database_name
-  description  = "Lakehouse Federationデモ用の工場マスタデータ - センサー、機械、品質検査データを格納"
-  location_uri = "s3://${aws_s3_bucket.glue_data.id}/factory_master/"
+  description  = "Lakehouse Federationデモ用の工場マスタデータ"
+  location_uri = "s3://${aws_s3_bucket.glue_data[0].id}/factory_master/"
 }
 
 # -----------------------------------------------------------------------------
-# テーブル: sensors（Parquet, 20行）- センサーマスタデータ
-# Terraformでテーブル定義を管理。データはGlue ETLジョブで生成。
+# Table: sensors (Parquet, 20 rows)
 # -----------------------------------------------------------------------------
 
 resource "aws_glue_catalog_table" "sensors" {
-  database_name = aws_glue_catalog_database.factory_master.name
+  count = var.enable_glue ? 1 : 0
+
+  database_name = aws_glue_catalog_database.factory_master[0].name
   name          = "sensors"
   description   = "センサーマスタデータ - 工場内全センサーの種類、単位、設置場所を管理するレジストリ"
 
@@ -35,7 +30,7 @@ resource "aws_glue_catalog_table" "sensors" {
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.glue_data.id}/factory_master/sensors/"
+    location      = "s3://${aws_s3_bucket.glue_data[0].id}/factory_master/sensors/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
@@ -80,12 +75,3 @@ resource "aws_glue_catalog_table" "sensors" {
 
   depends_on = [null_resource.run_glue_job]
 }
-
-# -----------------------------------------------------------------------------
-# Glue ETLジョブで管理されるテーブル（Terraform管理外）:
-#   - machines（Delta）             → boto3でSparkデータソース形式として登録
-#   - quality_inspections（Iceberg）→ Spark Icebergカタログ経由で登録
-#
-# テーブル説明・カラムコメントはETLジョブスクリプト
-# （scripts/generate_data.py）内で設定。
-# -----------------------------------------------------------------------------

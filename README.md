@@ -1,202 +1,112 @@
 # Databricks Lakehouse Federation Demo
 
-AWS Glue と Amazon Redshift のデータに対して、Databricks から Lakehouse Federation でクエリを実行するデモ環境です。
+マルチクラウド対応の Lakehouse Federation デモ環境です。
+AWS Glue、Amazon Redshift、PostgreSQL、Azure Synapse、Google BigQuery、Microsoft OneLake のデータに対して、
+Databricks から Lakehouse Federation でクエリを実行します。
 
 ## アーキテクチャ
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Databricks Workspace                         │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌───────────────┐  │
-│  │ glue_factory     │  │ redshift_factory  │  │ Demo Notebook │  │
-│  │ (Foreign Catalog)│  │ (Foreign Catalog) │  │ (SQL queries) │  │
-│  └────────┬────────┘  └────────┬─────────┘  └───────────────┘  │
-│           │ Glue Connection     │ Redshift Connection           │
-└───────────┼─────────────────────┼───────────────────────────────┘
-            │                     │
-            ▼                     ▼
-┌───────────────────────┐   ┌────────────────────────┐
-│   AWS Glue            │   │  Redshift Serverless   │
-│ ┌───────────────────┐ │   │ ┌────────────────────┐ │
-│ │ sensors (Parquet) │ │   │ │ sensor_readings    │ │
-│ │ machines (Delta)  │ │   │ │ (100 rows)         │ │
-│ │ quality_insp.     │ │   │ │ production_events  │ │
-│ │ (Iceberg)         │ │   │ │ (30 rows)          │ │
-│ └───────┬───────────┘ │   │ │ quality_inspections│ │
-│         │ S3          │   │ │ (40 rows)          │ │
-│         ▼             │   │ └────────────────────┘ │
-│  ┌────────────────┐   │   └────────────────────────┘
-│  │  S3 Bucket     │   │
-│  │  Parquet/Delta │   │
-│  │  /Iceberg      │   │
-│  └────────────────┘   │
-└───────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                     Databricks Unity Catalog                        │
+│                                                                      │
+│  Catalog Federation            Query Federation                      │
+│  ┌────────────────┐   ┌──────────────┐ ┌──────────────┐             │
+│  │lhf_catalog_glue│   │lhf_query_    │ │lhf_query_    │             │
+│  │   (AWS Glue)   │   │  redshift    │ │  postgres    │             │
+│  └───────┬────────┘   └──────┬───────┘ └──────┬───────┘             │
+│  ┌────────────────┐   ┌──────────────┐ ┌──────────────┐             │
+│  │lhf_catalog_    │   │lhf_query_    │ │lhf_query_    │             │
+│  │   onelake      │   │  synapse     │ │  bigquery    │             │
+│  └───────┬────────┘   └──────┬───────┘ └──────┬───────┘             │
+└──────────┼───────────────────┼─────────────────┼─────────────────────┘
+           │                   │                 │
+  ┌────────▼────────┐ ┌───────▼───────┐ ┌───────▼───────┐
+  │  AWS Glue /     │ │ Redshift /    │ │ BigQuery /    │
+  │  OneLake        │ │ PostgreSQL /  │ │ etc.          │
+  │  (S3/ADLS直接)  │ │ Synapse (JDBC)│ │               │
+  └─────────────────┘ └───────────────┘ └───────────────┘
 ```
 
-**データテーマ: 工場生産センサー・品質データ**
+## Federation ソース対応表
 
-### Glue テーブル（マスターデータ + 品質検査）
+| ソース | Type | AWS Workspace | Azure Workspace |
+|--------|------|:---:|:---:|
+| AWS Glue | Catalog | O | - |
+| OneLake (Fabric) | Catalog | - | O |
+| Amazon Redshift | Query | O | O |
+| PostgreSQL | Query | O (RDS) | O (Azure Flexible) |
+| Azure Synapse | Query | O | O |
+| Google BigQuery | Query | O | O |
 
-| テーブル | フォーマット | 行数 | 説明 |
-|---------|-------------|------|------|
-| `sensors` | **Parquet** | 20 | センサーマスタ（型、単位、設置場所） |
-| `machines` | **Delta** | 10 | 機械マスタ（ライン、工場、稼働状態） |
-| `quality_inspections` | **Iceberg** | 50 | 品質検査結果（合否、欠陥数） |
+## データテーマ: 工場生産管理
 
-### Redshift テーブル（トランザクションデータ + 品質検査）
+全テーブルが `machine_id` (1-10) を共通キーとしてJOIN可能です。
 
-| テーブル | 行数 | 説明 |
-|---------|------|------|
-| `sensor_readings` | 100 | センサー読取値（時系列） |
-| `production_events` | 30 | 生産イベント（起動/停止/メンテナンス/エラー） |
-| `quality_inspections` | 40 | 品質検査結果（合否、欠陥数） |
+| ソース | テーブル | 行数 | 内容 |
+|--------|---------|------|------|
+| Glue | sensors, machines, quality_inspections | 20/10/50 | マスタ + 品質検査 |
+| Redshift | sensor_readings, production_events, quality_inspections | 100/30/40 | トランザクション |
+| PostgreSQL | maintenance_logs, work_orders | 30/25 | 保守・作業管理 |
+| Synapse | shift_schedules, energy_consumption | 40/50 | シフト・電力 |
+| BigQuery | downtime_records, cost_allocation | 35/30 | 停止・コスト |
+| OneLake | production_plans, inventory_levels | 20/30 | 計画・在庫 |
 
-**Cross-source JOIN キー**: `sensor_id`, `machine_id`
+## クイックスタート
 
-### メタデータ
-
-全テーブルに **テーブル説明** と **カラムコメント** を付与しています。
-Databricks から `DESCRIBE TABLE EXTENDED` で確認可能です。
-
-## 前提条件
-
-以下がインストール・設定済みであること:
-
-| ツール | バージョン | 確認コマンド |
-|--------|-----------|-------------|
-| [Terraform](https://developer.hashicorp.com/terraform/install) | >= 1.5.0 | `terraform version` |
-| [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 | `aws --version` |
-| Databricks Workspace | Unity Catalog 有効 | - |
-
-## セットアップ手順
-
-### Step 1: AWS 認証
-
-AWS CLI でログインします。
+### 1. ワンクリックデプロイ
 
 ```bash
-# 方法A: アクセスキーで認証
-aws configure
-# AWS Access Key ID: ********
-# AWS Secret Access Key: ********
-# Default region name: us-west-2
-
-# 方法B: SSO で認証
-aws sso login --profile <your-profile>
-
-# 認証確認
-aws sts get-caller-identity
+./lakehouse_federation_demo_resource_deploy.sh
 ```
 
-### Step 2: Databricks Personal Access Token (PAT) の発行
+対話形式で以下を設定し、自動的に Terraform + DAB でデプロイします:
+- クラウド選択 (AWS / Azure)
+- Workspace URL (FEVM で作成可能)
+- Federation ソース選択
+- 認証情報の入力
 
-1. Databricks ワークスペース (https://e2-demo-field-eng.cloud.databricks.com) にログイン
-2. 右上のユーザーアイコン → **Settings** をクリック
-3. 左メニューの **Developer** → **Access tokens** をクリック
-4. **Manage** → **Generate new token** をクリック
-5. Comment: `lakehouse-federation-demo`、Lifetime: 任意（例: 90 days）
-6. **Generate** → 表示されたトークン (`dapi...`) をコピー
+### 2. 前提条件
 
-> **重要**: トークンは一度しか表示されません。安全な場所に保存してください。
+| ツール | 必須 | 確認コマンド |
+|--------|:----:|-------------|
+| Terraform | Yes | `terraform version` |
+| uv | Yes | `uv --version` |
+| jq | Yes | `jq --version` |
+| AWS CLI | AWS ソース使用時 | `aws --version` |
+| Azure CLI | Azure ソース使用時 | `az --version` |
+| gcloud CLI | BigQuery 使用時 | `gcloud --version` |
+| Databricks CLI | DAB デプロイ時 | `databricks --version` |
+| psql | PostgreSQL 使用時 | `psql --version` |
 
-### Step 3: terraform.tfvars の設定
+### 3. 認証
+
+| Provider | 方法 | 確認コマンド |
+|----------|------|------------|
+| AWS | `aws configure` or env vars | `aws sts get-caller-identity` |
+| Azure | `az login` | `az account show` |
+| GCP | `gcloud auth application-default login` | `gcloud auth list` |
+| Databricks | PAT (workspace UI で発行) | - |
+
+### 4. デモ実行
+
+デプロイ完了後:
+1. Databricks ワークスペースにログイン
+2. **Workspace** → `/Shared/lakehouse_federation_demo/federation_demo` を開く
+3. SQL Warehouse (Pro/Serverless) をアタッチ
+4. セル単位で実行（デプロイしたソースのセクションのみ）
+
+## 手動デプロイ
+
+対話スクリプトを使わず手動でデプロイする場合:
 
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-```
-
-`terraform.tfvars` を編集して実際の値を入力:
-
-```hcl
-# Databricks
-databricks_host  = "https://e2-demo-field-eng.cloud.databricks.com"
-databricks_token = "dapi..."       # Step 2 で発行したトークン
-
-# Redshift
-redshift_admin_password = "MySecurePass123!"
-```
-
-> **NOTE**: AWS Account ID は `aws sts get-caller-identity` から自動取得されます。
-> IAM ロールの External ID も Databricks が自動生成するため、手動入力は不要です。
-
-### Step 4: デプロイ
-
-```bash
-cd terraform
-
-# 初期化
+# terraform.tfvars を編集
 terraform init
-
-# プラン確認
 terraform plan
-
-# デプロイ実行
 terraform apply
-```
-
-> **所要時間**: 約 10-15 分（Redshift Serverless の起動 + Glue ETL Job の実行に時間がかかります）
-
-デプロイ完了後、以下が出力されます:
-
-```
-Outputs:
-  databricks_glue_catalog     = "glue_factory"
-  databricks_redshift_catalog = "redshift_factory"
-  glue_etl_job_name           = "lhf-demo-data-generator"
-  redshift_endpoint           = "lhf-demo-wg.XXXXX.us-west-2.redshift-serverless.amazonaws.com"
-  ...
-```
-
-### Step 5: デモ実行
-
-1. Databricks ワークスペースにログイン
-2. 左メニュー → **Workspace** をクリック
-3. `notebooks/federation_demo.sql` の内容をコピーして新しいノートブックを作成
-   - または: **Import** から `.sql` ファイルをアップロード
-4. クラスター（DBR 13.3 LTS 以上）または SQL Warehouse（Pro/Serverless）をアタッチ
-5. **Run All** でデモクエリを実行
-
-## デモクエリのハイライト
-
-### Single-source クエリ
-- Glue (Parquet): `SELECT * FROM glue_factory.lhf_demo_factory_master.sensors`
-- Glue (Delta): `SELECT * FROM glue_factory.lhf_demo_factory_master.machines`
-- Glue (Iceberg): `SELECT * FROM glue_factory.lhf_demo_factory_master.quality_inspections`
-- Redshift: `SELECT * FROM redshift_factory.public.sensor_readings`
-
-### メタデータ確認
-```sql
--- テーブル説明とカラムコメントを確認
-DESCRIBE TABLE EXTENDED glue_factory.lhf_demo_factory_master.sensors;
-DESCRIBE TABLE EXTENDED redshift_factory.public.sensor_readings;
-```
-
-### Cross-source JOIN (Glue + Redshift)
-```sql
--- センサーマスタ (Glue/Parquet) + センサー読取値 (Redshift)
--- ※ Parquet/Delta/Iceberg は正しい型を返すため try_cast は不要
-SELECT s.sensor_name, s.sensor_type, r.value, r.status
-FROM glue_factory.lhf_demo_factory_master.sensors s
-JOIN redshift_factory.public.sensor_readings r
-  ON s.sensor_id = r.sensor_id
-WHERE r.status IN ('warning', 'critical');
-```
-
-### 品質検査クロスソース比較 (Glue/Iceberg + Redshift)
-```sql
--- Glue (Iceberg) と Redshift の品質検査結果を統合
-SELECT machine_id, result, defect_count, 'Glue' AS source
-FROM glue_factory.lhf_demo_factory_master.quality_inspections
-UNION ALL
-SELECT machine_id, result, defect_count, 'Redshift' AS source
-FROM redshift_factory.public.quality_inspections;
-```
-
-### Machine Health Dashboard (全6テーブル結合)
-```sql
--- センサー異常 + 稼働イベント + 品質検査 の統合ダッシュボード
--- 詳細はノートブックの Section 16 を参照
 ```
 
 ## クリーンアップ
@@ -206,99 +116,69 @@ cd terraform
 terraform destroy
 ```
 
-> 全ての AWS リソースと Databricks の Connection/Catalog が削除されます。
-
 ## トラブルシューティング
 
 ### "Cannot assume role" エラー
-- IAM ロールの trust policy が正しく設定されているか AWS Console で確認
-- `terraform apply` を再実行して IAM ロールの trust policy が最新の external_id を使っているか確認
+- IAM ロールの trust policy が正しいか AWS Console で確認
+- `terraform apply` を再実行
 
-### "Connection test failed" / "Failed to connect" (Redshift)
-- Redshift Serverless のワークグループが AVAILABLE 状態か確認
+### "Connection test failed" (Redshift)
+- Redshift Serverless が AVAILABLE 状態か確認
 - Security Group で 5439 ポートが開いているか確認
-- `redshift_admin_password` が正しいか確認
-- **Custodian に注意**: 共有 AWS アカウントでは `0.0.0.0/0` の ingress ルールが自動削除される場合があります。
-  その場合は `terraform apply` で再適用してください（本デモでは `/1` CIDR に分割して回避しています）
 
 ### "External location validation failed"
-- Storage Credential の IAM ロールが S3 バケットへの read アクセス権を持っているか確認
-- Glue ETL Job が完了してデータが S3 に書き込まれているか確認
+- Storage Credential の IAM ロールが S3 への read アクセス権を持っているか確認
 
-### "Insufficient Lake Formation permission(s)" (Glue)
-- AWS Lake Formation が有効なアカウントでは、IAM ポリシーに加えて Lake Formation 権限が必要です
-- `CreateDatabaseDefaultPermissions` が空の場合、作成した Glue データベースに `IAM_ALLOWED_PRINCIPALS` を手動で付与する必要があります
-  ```bash
-  aws lakeformation grant-permissions \
-    --principal '{"DataLakePrincipalIdentifier":"IAM_ALLOWED_PRINCIPALS"}' \
-    --resource '{"Database":{"Name":"lhf_demo_factory_master"}}' \
-    --permissions "ALL"
-  ```
-- Terraform の `aws_lakeformation_permissions` リソースで自動管理されます
+### "Insufficient Lake Formation permission(s)"
+- Lake Formation 権限は Terraform で自動管理されます。`terraform apply` を再実行
 
-### "Table not found" (Glue)
-- Glue Database とテーブルが AWS Console で確認できるか確認
-- Glue テーブルの S3 ロケーションが正しいか確認
-- Foreign Catalog の `authorized_paths` が S3 パスをカバーしているか確認
+### PostgreSQL 接続エラー
+- Security Group で 5432 ポートが開いているか確認
+- `postgres_admin_password` が正しいか確認
 
-### Glue ETL Job が失敗する
-- CloudWatch Logs でジョブのログを確認:
-  ```bash
-  aws glue get-job-runs --job-name lhf-demo-data-generator --region us-west-2
-  ```
-- IAM ロールに S3, Glue, CloudWatch の権限があるか確認
-- Lake Formation のデータアクセス権限が付与されているか確認
+### Synapse 接続エラー
+- Synapse ファイアウォールルールが設定されているか確認
+- `synapse_admin_password` が正しいか確認
 
-### Redshift テーブルにデータがない
-- `aws_redshiftdata_statement` が正常完了したか確認:
-  ```bash
-  aws redshift-data list-statements --region us-west-2
-  ```
-- ステートメントが FAILED の場合はエラー詳細を確認:
-  ```bash
-  aws redshift-data describe-statement --id <statement-id> --region us-west-2
-  ```
-
-### `databricks_credential` リソースでエラー
-- Databricks Terraform provider のバージョンが 1.58 以上であることを確認
-- `databricks_credential` が未サポートの場合は provider を最新版にアップデート:
-  `terraform init -upgrade`
-- それでもエラーが出る場合は、Databricks UI (Catalog > External data > Credentials)
-  から手動で Service Credential を作成し、Terraform state から除外してください
+### BigQuery 接続エラー
+- GCP 認証が有効か確認: `gcloud auth application-default login`
+- `gcp_project_id` が正しいか確認
 
 ## ファイル構成
 
 ```
 lakehouse_federation/
-├── terraform/
-│   ├── main.tf                    # Providers (AWS, Databricks)
-│   ├── variables.tf               # 変数定義
-│   ├── terraform.tfvars.example   # 変数値サンプル
-│   ├── outputs.tf                 # 出力値
-│   ├── aws_networking.tf          # VPC, Subnets, Security Groups
-│   ├── aws_s3.tf                  # S3バケット (Glueデータ格納)
-│   ├── aws_iam.tf                 # IAMロール (Glue API + S3読取)
-│   ├── aws_glue.tf                # Glue Database & Tables (Parquet/Delta/Iceberg)
-│   ├── aws_glue_etl.tf            # Glue ETL Job (データ生成)
-│   ├── aws_redshift.tf            # Redshift Serverless
-│   ├── aws_redshift_data.tf       # Redshift DDL/DML/Comments実行
-│   ├── aws_lakeformation.tf       # Lake Formation権限 (IAM_ALLOWED_PRINCIPALS)
-│   ├── databricks_credentials.tf  # Service / Storage Credentials
-│   ├── databricks_external.tf     # External Location
-│   ├── databricks_connection.tf   # Connections (Glue, Redshift)
-│   ├── databricks_catalog.tf      # Foreign Catalogs (with storage_root)
-│   ├── scripts/
-│   │   └── generate_data.py       # PySpark ETLスクリプト (Parquet/Delta/Iceberg生成)
-│   └── sql/
-│       ├── create_sensor_readings.sql
-│       ├── create_production_events.sql
-│       ├── create_quality_inspections.sql
-│       ├── insert_sensor_readings.sql
-│       ├── insert_production_events.sql
-│       ├── insert_quality_inspections.sql
-│       └── comments.sql            # テーブル/カラムコメント (Redshift)
+├── lakehouse_federation_demo_resource_deploy.sh  # ワンクリックデプロイ
+├── databricks.yml                                 # DAB 設定
+├── pyproject.toml                                 # Python 依存 (uv)
+├── scripts/
+│   ├── deploy.py                                  # 対話式デプロイスクリプト
+│   └── prerequisites.sh                           # CLI チェック
 ├── notebooks/
-│   └── federation_demo.sql        # デモクエリノートブック (16セクション)
-├── .gitignore
-└── README.md
+│   └── federation_demo.sql                        # デモノートブック (4章構成)
+└── terraform/
+    ├── main.tf                                    # Providers
+    ├── variables.tf                               # 変数定義
+    ├── outputs.tf                                 # 出力値
+    ├── terraform.tfvars.example                   # 設定サンプル
+    ├── aws_s3.tf, aws_iam.tf, aws_networking.tf   # AWS 基盤
+    ├── aws_glue.tf, aws_glue_etl.tf               # Glue (Catalog Fed.)
+    ├── aws_lakeformation.tf                       # Lake Formation
+    ├── aws_redshift.tf, aws_redshift_data.tf      # Redshift (Query Fed.)
+    ├── aws_rds_postgres.tf                        # PostgreSQL on AWS
+    ├── azure_resource_group.tf                    # Azure 共通
+    ├── azure_synapse.tf                           # Synapse (Query Fed.)
+    ├── azure_postgres.tf                          # PostgreSQL on Azure
+    ├── azure_onelake.tf                           # OneLake (Catalog Fed.)
+    ├── gcp_bigquery.tf                            # BigQuery (Query Fed.)
+    ├── databricks_credentials.tf                  # Credentials
+    ├── databricks_connection.tf                   # Connections
+    ├── databricks_catalog.tf                      # Foreign Catalogs
+    ├── databricks_external.tf                     # External Location
+    ├── scripts/generate_data.py                   # Glue ETL
+    └── sql/                                       # DDL/DML
+        ├── *.sql                                  # Redshift SQL
+        ├── postgres/                              # PostgreSQL SQL
+        ├── synapse/                               # Synapse SQL
+        └── bigquery/                              # BigQuery SQL
 ```

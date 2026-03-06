@@ -1,0 +1,14 @@
+bundle:
+  name: lakehouse_federation_demo
+
+artifacts:
+  notebooks:
+    - source: notebooks/
+      path: /Shared/lakehouse_federation_demo
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: ${DATABRICKS_HOST}

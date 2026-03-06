@@ -4,39 +4,91 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Foreign Catalog: AWS Glue (factory master data)
-# Mirrors the Glue database as a Unity Catalog catalog.
-# Authorized paths restrict which S3 locations can be accessed.
-# storage_root provides a location for foreign catalog metadata.
+# Catalog Federation: AWS Glue
 # -----------------------------------------------------------------------------
-
 resource "databricks_catalog" "glue" {
-  name            = "glue_factory"
-  connection_name = databricks_connection.glue.name
+  count           = var.enable_glue ? 1 : 0
+  name            = "${var.catalog_prefix_catalog}_glue"
+  connection_name = databricks_connection.glue[0].name
 
   options = {
-    authorized_paths = "s3://${aws_s3_bucket.glue_data.id}"
+    authorized_paths = "s3://${aws_s3_bucket.glue_data[0].id}"
   }
 
-  storage_root = "s3://${aws_s3_bucket.glue_data.id}/glue_factory_metadata"
+  storage_root = "s3://${aws_s3_bucket.glue_data[0].id}/glue_factory_metadata"
 
-  comment = "外部カタログ: AWS Glue 工場マスタデータ（sensors [Parquet], machines [Delta], quality_inspections [Iceberg]）"
+  comment = "外部カタログ: AWS Glue 工場マスタデータ（sensors, machines, quality_inspections）"
 
   depends_on = [databricks_external_location.glue_data]
 }
 
 # -----------------------------------------------------------------------------
-# Foreign Catalog: Redshift Serverless (factory transaction data)
-# Mirrors the Redshift database as a Unity Catalog catalog.
+# Query Federation: Redshift
 # -----------------------------------------------------------------------------
-
 resource "databricks_catalog" "redshift" {
-  name            = "redshift_factory"
-  connection_name = databricks_connection.redshift.name
+  count           = var.enable_redshift ? 1 : 0
+  name            = "${var.catalog_prefix_query}_redshift"
+  connection_name = databricks_connection.redshift[0].name
 
   options = {
     database = "factory_db"
   }
 
   comment = "外部カタログ: Redshift 工場トランザクションデータ（sensor_readings, production_events, quality_inspections）"
+}
+
+# -----------------------------------------------------------------------------
+# Query Federation: PostgreSQL
+# -----------------------------------------------------------------------------
+resource "databricks_catalog" "postgres" {
+  count           = var.enable_postgres ? 1 : 0
+  name            = "${var.catalog_prefix_query}_postgres"
+  connection_name = databricks_connection.postgres[0].name
+
+  options = {
+    database = "factory_db"
+  }
+
+  comment = "外部カタログ: PostgreSQL 保守・作業指示データ（maintenance_logs, work_orders）"
+}
+
+# -----------------------------------------------------------------------------
+# Query Federation: Azure Synapse
+# -----------------------------------------------------------------------------
+resource "databricks_catalog" "synapse" {
+  count           = var.enable_synapse ? 1 : 0
+  name            = "${var.catalog_prefix_query}_synapse"
+  connection_name = databricks_connection.synapse[0].name
+
+  options = {
+    database = "factory_analytics"
+  }
+
+  comment = "外部カタログ: Azure Synapse シフト・電力データ（shift_schedules, energy_consumption）"
+}
+
+# -----------------------------------------------------------------------------
+# Query Federation: BigQuery
+# -----------------------------------------------------------------------------
+resource "databricks_catalog" "bigquery" {
+  count           = var.enable_bigquery ? 1 : 0
+  name            = "${var.catalog_prefix_query}_bigquery"
+  connection_name = databricks_connection.bigquery[0].name
+
+  options = {
+    project_id = var.gcp_project_id
+  }
+
+  comment = "外部カタログ: BigQuery 稼働停止・コストデータ（downtime_records, cost_allocation）"
+}
+
+# -----------------------------------------------------------------------------
+# Catalog Federation: OneLake
+# -----------------------------------------------------------------------------
+resource "databricks_catalog" "onelake" {
+  count           = var.enable_onelake ? 1 : 0
+  name            = "${var.catalog_prefix_catalog}_onelake"
+  connection_name = databricks_connection.onelake[0].name
+
+  comment = "外部カタログ: OneLake 生産計画・在庫データ（production_plans, inventory_levels）"
 }

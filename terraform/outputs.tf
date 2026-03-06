@@ -2,76 +2,57 @@
 # Outputs
 # =============================================================================
 
-# ----- AWS -----
-
+# ----- AWS Glue -----
 output "s3_bucket_name" {
-  description = "S3 bucket containing Glue table data"
-  value       = aws_s3_bucket.glue_data.id
+  description = "S3 bucket for Glue data"
+  value       = var.enable_glue ? aws_s3_bucket.glue_data[0].id : null
 }
 
 output "glue_database_name" {
   description = "Glue catalog database name"
-  value       = aws_glue_catalog_database.factory_master.name
-}
-
-output "redshift_endpoint" {
-  description = "Redshift Serverless workgroup endpoint"
-  value       = aws_redshiftserverless_workgroup.demo.endpoint[0].address
-}
-
-output "redshift_database" {
-  description = "Redshift database name"
-  value       = "factory_db"
+  value       = var.enable_glue ? aws_glue_catalog_database.factory_master[0].name : null
 }
 
 output "glue_iam_role_arn" {
-  description = "IAM role ARN for Databricks Glue access (service credential)"
-  value       = aws_iam_role.databricks_glue.arn
+  description = "IAM role ARN for Databricks Glue access"
+  value       = var.enable_glue ? aws_iam_role.databricks_glue[0].arn : null
 }
 
-output "storage_iam_role_arn" {
-  description = "IAM role ARN for Databricks S3 access (storage credential)"
-  value       = aws_iam_role.databricks_storage.arn
+# ----- Redshift -----
+output "redshift_endpoint" {
+  description = "Redshift Serverless endpoint"
+  value       = var.enable_redshift ? aws_redshiftserverless_workgroup.demo[0].endpoint[0].address : null
 }
 
-output "glue_etl_job_name" {
-  description = "Glue ETL job name for data generation"
-  value       = aws_glue_job.data_generator.name
+# ----- PostgreSQL -----
+output "postgres_endpoint" {
+  description = "PostgreSQL endpoint"
+  value = var.enable_postgres ? (
+    var.cloud == "aws" ? aws_db_instance.postgres[0].address : azurerm_postgresql_flexible_server.postgres[0].fqdn
+  ) : null
 }
 
-# ----- Databricks -----
-
-output "databricks_glue_catalog" {
-  description = "Databricks foreign catalog name for Glue"
-  value       = databricks_catalog.glue.name
+# ----- Azure Synapse -----
+output "synapse_endpoint" {
+  description = "Azure Synapse SQL endpoint"
+  value       = var.enable_synapse ? "${azurerm_synapse_workspace.demo[0].name}.sql.azuresynapse.net" : null
 }
 
-output "databricks_redshift_catalog" {
-  description = "Databricks foreign catalog name for Redshift"
-  value       = databricks_catalog.redshift.name
+# ----- BigQuery -----
+output "bigquery_dataset" {
+  description = "BigQuery dataset ID"
+  value       = var.enable_bigquery ? google_bigquery_dataset.factory[0].dataset_id : null
 }
 
-output "databricks_glue_connection" {
-  description = "Databricks connection name for Glue"
-  value       = databricks_connection.glue.name
-}
-
-output "databricks_redshift_connection" {
-  description = "Databricks connection name for Redshift"
-  value       = databricks_connection.redshift.name
-}
-
-output "databricks_glue_service_credential" {
-  description = "Databricks service credential name for Glue API access"
-  value       = databricks_credential.glue_service.name
-}
-
-output "databricks_glue_storage_credential" {
-  description = "Databricks storage credential name for S3 data access"
-  value       = databricks_storage_credential.glue_storage.name
-}
-
-output "databricks_external_location" {
-  description = "Databricks external location name for Glue data"
-  value       = databricks_external_location.glue_data.name
+# ----- Databricks Catalogs -----
+output "databricks_catalogs" {
+  description = "Map of deployed Databricks foreign catalogs"
+  value = merge(
+    var.enable_glue ? { glue = databricks_catalog.glue[0].name } : {},
+    var.enable_redshift ? { redshift = databricks_catalog.redshift[0].name } : {},
+    var.enable_postgres ? { postgres = databricks_catalog.postgres[0].name } : {},
+    var.enable_synapse ? { synapse = databricks_catalog.synapse[0].name } : {},
+    var.enable_bigquery ? { bigquery = databricks_catalog.bigquery[0].name } : {},
+    var.enable_onelake ? { onelake = databricks_catalog.onelake[0].name } : {},
+  )
 }

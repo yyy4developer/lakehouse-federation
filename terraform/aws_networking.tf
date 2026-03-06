@@ -1,13 +1,19 @@
 # =============================================================================
-# VPC & Networking for Redshift Serverless
-# Redshift Serverless requires subnets in at least 3 different AZs.
+# VPC & Networking for Redshift and RDS PostgreSQL
 # =============================================================================
 
+locals {
+  needs_networking = var.enable_redshift || (var.enable_postgres && var.cloud == "aws")
+}
+
 data "aws_availability_zones" "available" {
+  count = local.needs_networking ? 1 : 0
   state = "available"
 }
 
 resource "aws_vpc" "main" {
+  count = local.needs_networking ? 1 : 0
+
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -18,11 +24,11 @@ resource "aws_vpc" "main" {
 }
 
 resource "aws_subnet" "public" {
-  count = 3
+  count = local.needs_networking ? 3 : 0
 
-  vpc_id            = aws_vpc.main.id
+  vpc_id            = aws_vpc.main[0].id
   cidr_block        = "10.0.${count.index + 1}.0/24"
-  availability_zone = data.aws_availability_zones.available.names[count.index]
+  availability_zone = data.aws_availability_zones.available[0].names[count.index]
 
   map_public_ip_on_launch = true
 
@@ -32,7 +38,9 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
+  count = local.needs_networking ? 1 : 0
+
+  vpc_id = aws_vpc.main[0].id
 
   tags = {
     Name = "${var.project_prefix}-igw"
@@ -40,11 +48,13 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
+  count = local.needs_networking ? 1 : 0
+
+  vpc_id = aws_vpc.main[0].id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+    gateway_id = aws_internet_gateway.main[0].id
   }
 
   tags = {
@@ -53,20 +63,21 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  count = 3
+  count = local.needs_networking ? 3 : 0
 
   subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+  route_table_id = aws_route_table.public[0].id
 }
 
 resource "aws_security_group" "redshift" {
-  name_prefix = "${var.project_prefix}-redshift-"
-  vpc_id      = aws_vpc.main.id
-  description = "Security group for Redshift Serverless (demo - allows public access on 5439)"
+  count = var.enable_redshift ? 1 : 0
 
-  # Split into two /1 CIDRs to avoid custodian auto-removal of 0.0.0.0/0
+  name_prefix = "${var.project_prefix}-redshift-"
+  vpc_id      = aws_vpc.main[0].id
+  description = "Security group for Redshift Serverless"
+
   ingress {
-    description = "Redshift from Databricks (demo only) - range 1"
+    description = "Redshift from Databricks - range 1"
     from_port   = 5439
     to_port     = 5439
     protocol    = "tcp"
@@ -74,7 +85,7 @@ resource "aws_security_group" "redshift" {
   }
 
   ingress {
-    description = "Redshift from Databricks (demo only) - range 2"
+    description = "Redshift from Databricks - range 2"
     from_port   = 5439
     to_port     = 5439
     protocol    = "tcp"

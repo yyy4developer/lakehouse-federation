@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
+    }
     databricks = {
       source  = "databricks/databricks"
       version = "~> 1.58"
@@ -29,6 +37,23 @@ provider "aws" {
       ManagedBy = "terraform"
     }
   }
+}
+
+# -----------------------------------------------------------------------------
+# Azure Provider
+# -----------------------------------------------------------------------------
+provider "azurerm" {
+  features {}
+  subscription_id = var.azure_subscription_id
+}
+
+# -----------------------------------------------------------------------------
+# Google Cloud Provider
+# -----------------------------------------------------------------------------
+provider "google" {
+  project     = var.gcp_project_id
+  region      = var.gcp_region
+  credentials = var.gcp_credentials_json != "" ? var.gcp_credentials_json : null
 }
 
 # -----------------------------------------------------------------------------

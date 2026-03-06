@@ -24,3 +24,11 @@ Thumbs.db
 __pycache__/
 *.pyc
 .env
+.venv/
+
+# GCP credentials
+terraform/*.json
+
+# Terraform plan
+*.tfplan
+tfplan
