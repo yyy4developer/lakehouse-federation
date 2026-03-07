@@ -61,7 +61,7 @@ resource "databricks_catalog" "synapse" {
   connection_name = databricks_connection.synapse[0].name
 
   options = {
-    database = "master"
+    database = "factory_analytics"
   }
 
   comment = "外部カタログ: Azure Synapse シフト・電力データ（shift_schedules, energy_consumption）"
