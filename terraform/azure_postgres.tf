@@ -50,19 +50,27 @@ resource "null_resource" "azure_postgres_init" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
       export PGPASSWORD='${var.postgres_admin_password}'
       PGHOST='${azurerm_postgresql_flexible_server.postgres[0].fqdn}'
 
+      # Find psql (macOS homebrew path or standard)
+      PSQL=$(command -v psql || echo "/opt/homebrew/opt/libpq/bin/psql")
+      if [ ! -x "$PSQL" ]; then
+        echo "ERROR: psql not found. Install via: brew install libpq" >&2
+        exit 1
+      fi
+
       echo "Creating tables..."
-      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_maintenance_logs.sql
-      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_work_orders.sql
+      "$PSQL" -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_maintenance_logs.sql
+      "$PSQL" -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_work_orders.sql
 
       echo "Inserting data..."
-      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_maintenance_logs.sql
-      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_work_orders.sql
+      "$PSQL" -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_maintenance_logs.sql
+      "$PSQL" -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_work_orders.sql
 
       echo "Adding comments..."
-      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/comments.sql
+      "$PSQL" -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/comments.sql
 
       echo "Azure PostgreSQL initialization complete."
     EOT

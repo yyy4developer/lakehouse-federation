@@ -75,14 +75,21 @@ resource "null_resource" "synapse_init" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
       SYNAPSE_ONDEMAND="${azurerm_synapse_workspace.demo[0].name}-ondemand.sql.azuresynapse.net"
+
+      echo "Waiting for firewall rules to propagate..."
+      sleep 15
 
       echo "Getting Azure AD token for serverless database creation..."
       TOKEN=$(az account get-access-token --resource https://sql.azuresynapse.net --query accessToken -o tsv)
 
       echo "Creating serverless database ${local.synapse_db_name}..."
-      sqlcmd -S "$SYNAPSE_ONDEMAND" -d master -P "$TOKEN" -G \
-        -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '${local.synapse_db_name}') CREATE DATABASE ${local.synapse_db_name} COLLATE Latin1_General_100_BIN2_UTF8"
+      for i in 1 2 3; do
+        sqlcmd -S "$SYNAPSE_ONDEMAND" -d master -P "$TOKEN" -G \
+          -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '${local.synapse_db_name}') CREATE DATABASE ${local.synapse_db_name} COLLATE Latin1_General_100_BIN2_UTF8" \
+          && break || { echo "  Retry $i..."; sleep 10; }
+      done
 
       echo "Setting up sqladmin user..."
       sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -P "$TOKEN" -G \
@@ -93,10 +100,6 @@ resource "null_resource" "synapse_init" {
         -i ${path.module}/sql/synapse/create_shift_schedules.sql
       sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -U sqladmin -P '${var.synapse_admin_password}' \
         -i ${path.module}/sql/synapse/create_energy_consumption.sql
-
-      echo "Adding comments..."
-      sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -U sqladmin -P '${var.synapse_admin_password}' \
-        -i ${path.module}/sql/synapse/comments.sql
 
       echo "Synapse initialization complete."
     EOT

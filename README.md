@@ -170,6 +170,8 @@ terraform destroy
 - **DATABASE 作成**: SQL認証ではなく AAD トークンが必要（`az account get-access-token --resource https://sql.azuresynapse.net`）
 - **master DB**: ユーザーオブジェクトの SELECT に制限あり → 専用DB を作成して使用
 - **エンドポイント**: Serverless は `-ondemand.sql.azuresynapse.net` を使用
+- **sp_addextendedproperty**: Serverless SQL pool では非対応。テーブル/カラムコメントは設定不可
+- **ファイアウォール反映遅延**: ルール作成後、接続可能になるまで10-15秒の遅延がある
 
 #### Databricks から "InvocationTargetException"
 - ファイアウォールルールが Databricks の IP を許可しているか確認
