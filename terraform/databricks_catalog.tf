@@ -31,7 +31,7 @@ resource "databricks_catalog" "redshift" {
   connection_name = databricks_connection.redshift[0].name
 
   options = {
-    database = "factory_db"
+    database = local.redshift_db_name
   }
 
   comment = "外部カタログ: Redshift 工場トランザクションデータ（sensor_readings, production_events, quality_inspections）"
@@ -46,7 +46,7 @@ resource "databricks_catalog" "postgres" {
   connection_name = databricks_connection.postgres[0].name
 
   options = {
-    database = "factory_db"
+    database = local.postgres_db_name
   }
 
   comment = "外部カタログ: PostgreSQL 保守・作業指示データ（maintenance_logs, work_orders）"
@@ -61,7 +61,7 @@ resource "databricks_catalog" "synapse" {
   connection_name = databricks_connection.synapse[0].name
 
   options = {
-    database = "factory_analytics"
+    database = local.synapse_db_name
   }
 
   comment = "外部カタログ: Azure Synapse シフト・電力データ（shift_schedules, energy_consumption）"

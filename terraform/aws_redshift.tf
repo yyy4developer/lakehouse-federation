@@ -6,7 +6,7 @@ resource "aws_redshiftserverless_namespace" "demo" {
   count = var.enable_redshift ? 1 : 0
 
   namespace_name      = "${var.project_prefix}-ns"
-  db_name             = "factory_db"
+  db_name             = local.redshift_db_name
   admin_username      = "admin"
   admin_user_password = var.redshift_admin_password
 

@@ -26,7 +26,7 @@ resource "azurerm_postgresql_flexible_server" "postgres" {
 resource "azurerm_postgresql_flexible_server_database" "factory" {
   count = (var.enable_postgres && var.cloud == "azure") ? 1 : 0
 
-  name      = "factory_db"
+  name      = local.postgres_db_name
   server_id = azurerm_postgresql_flexible_server.postgres[0].id
   charset   = "UTF8"
   collation = "en_US.utf8"
@@ -54,15 +54,15 @@ resource "null_resource" "azure_postgres_init" {
       PGHOST='${azurerm_postgresql_flexible_server.postgres[0].fqdn}'
 
       echo "Creating tables..."
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/create_maintenance_logs.sql
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/create_work_orders.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_maintenance_logs.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_work_orders.sql
 
       echo "Inserting data..."
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/insert_maintenance_logs.sql
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/insert_work_orders.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_maintenance_logs.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_work_orders.sql
 
       echo "Adding comments..."
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/comments.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/comments.sql
 
       echo "Azure PostgreSQL initialization complete."
     EOT

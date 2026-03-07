@@ -118,31 +118,78 @@ terraform destroy
 
 ## トラブルシューティング
 
-### "Cannot assume role" エラー
+### AWS 全般
+
+#### "Cannot assume role" エラー
 - IAM ロールの trust policy が正しいか AWS Console で確認
 - `terraform apply` を再実行
 
-### "Connection test failed" (Redshift)
+#### AWS SSO トークン期限切れ
+- `aws sso login --profile <profile-name>` で再認証
+- `AWS_PROFILE` 環境変数がセットされていることを確認
+
+### Glue / Lake Formation
+
+#### "External location validation failed"
+- Storage Credential の IAM ロールが S3 への read アクセス権を持っているか確認
+
+#### "Insufficient Lake Formation permission(s)"
+- Lake Formation のデフォルト権限は**新規作成**テーブルにのみ適用される
+- 既存テーブルには `aws lakeformation grant-permissions` で個別に権限付与が必要
+- SSO ロールを Lake Formation admin に設定: `aws lakeformation put-data-lake-settings`
+- 詳細: `IAM_ALLOWED_PRINCIPALS` に ALL 権限を付与する
+
+#### Glue テーブルが Databricks から見えない
+1. Lake Formation admin が正しく設定されているか確認
+2. 各テーブルに `IAM_ALLOWED_PRINCIPALS` 権限があるか確認:
+   ```bash
+   aws lakeformation list-permissions --resource-type TABLE
+   ```
+
+### Redshift
+
+#### "Connection test failed"
 - Redshift Serverless が AVAILABLE 状態か確認
 - Security Group で 5439 ポートが開いているか確認
 
-### "External location validation failed"
-- Storage Credential の IAM ロールが S3 への read アクセス権を持っているか確認
+### PostgreSQL
 
-### "Insufficient Lake Formation permission(s)"
-- Lake Formation 権限は Terraform で自動管理されます。`terraform apply` を再実行
-
-### PostgreSQL 接続エラー
+#### 接続エラー
 - Security Group で 5432 ポートが開いているか確認
 - `postgres_admin_password` が正しいか確認
+- macOS で `psql` が見つからない場合: `/opt/homebrew/opt/libpq/bin/psql` を使用
 
-### Synapse 接続エラー
-- Synapse ファイアウォールルールが設定されているか確認
-- `synapse_admin_password` が正しいか確認
+### Azure Synapse
 
-### BigQuery 接続エラー
+#### ファイアウォールルール作成失敗
+- Azure Policy が `0.0.0.0-255.255.255.255` を拒否する場合がある
+- Terraform は自動的に2つの広範囲ルール（1.0.0.0-126.x, 128.0.0.0-254.x）で回避
+
+#### Serverless SQL pool の制限事項
+- **INSERT 不可**: テーブル作成+INSERT ではなく、VIEW with VALUES を使用
+- **DATABASE 作成**: SQL認証ではなく AAD トークンが必要（`az account get-access-token --resource https://sql.azuresynapse.net`）
+- **master DB**: ユーザーオブジェクトの SELECT に制限あり → 専用DB を作成して使用
+- **エンドポイント**: Serverless は `-ondemand.sql.azuresynapse.net` を使用
+
+#### Databricks から "InvocationTargetException"
+- ファイアウォールルールが Databricks の IP を許可しているか確認
+- `trustServerCertificate = "true"` がコネクション設定に含まれているか確認
+- 接続先が ondemand エンドポイントであることを確認
+
+#### Databricks SQLDW コネクションで `database` オプションエラー
+- `database` オプションはコネクションではなく**カタログ**側で設定する
+
+### BigQuery
+
+#### 接続エラー
 - GCP 認証が有効か確認: `gcloud auth application-default login`
 - `gcp_project_id` が正しいか確認
+
+### Databricks
+
+#### OAuth トークン期限切れ
+- `databricks auth login --host <workspace-url>` で再認証
+- MCP ツール使用時はキャッシュされたトークンが古い場合がある → CLI で直接 API 呼び出し
 
 ## ファイル構成
 
@@ -176,8 +223,8 @@ lakehouse_federation/
     ├── databricks_catalog.tf                      # Foreign Catalogs
     ├── databricks_external.tf                     # External Location
     ├── scripts/generate_data.py                   # Glue ETL
-    └── sql/                                       # DDL/DML
-        ├── *.sql                                  # Redshift SQL
+    └── sql/                                       # DDL/DML (ソース別)
+        ├── redshift/                              # Redshift SQL
         ├── postgres/                              # PostgreSQL SQL
         ├── synapse/                               # Synapse SQL
         └── bigquery/                              # BigQuery SQL

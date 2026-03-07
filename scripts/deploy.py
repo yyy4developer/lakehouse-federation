@@ -3,9 +3,13 @@
 Lakehouse Federation Demo - Interactive Deploy Script
 """
 
+import json
 import os
+import random
+import string
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -25,6 +29,16 @@ SOURCES = {
     "synapse":  {"label": "Azure Synapse (Query Federation)",   "type": "query",   "cloud_req": None},
     "bigquery": {"label": "Google BigQuery (Query Federation)", "type": "query",   "cloud_req": None},
     "onelake":  {"label": "OneLake / Fabric (Catalog Federation)", "type": "catalog", "cloud_req": "azure"},
+}
+
+# Source -> table definitions (for deploy_result.md)
+SOURCE_TABLES = {
+    "glue":     ["sensors", "machines", "quality_inspections"],
+    "redshift": ["sensor_readings", "production_events", "quality_inspections"],
+    "postgres": ["maintenance_logs", "work_orders"],
+    "synapse":  ["shift_schedules", "energy_consumption"],
+    "bigquery": ["downtime_records", "cost_allocation"],
+    "onelake":  ["production_plans", "inventory_levels"],
 }
 
 
@@ -70,7 +84,6 @@ def setup_databricks_auth(workspace_url: str):
     console.print("\n[bold]Databricks OAuth 認証...[/bold]")
     console.print(f"  Workspace: {workspace_url}")
 
-    # Check if already authenticated
     result = subprocess.run(
         ["databricks", "auth", "token", "--host", workspace_url],
         capture_output=True, text=True, timeout=10,
@@ -93,7 +106,6 @@ def setup_databricks_auth(workspace_url: str):
 def select_sources(cloud: str) -> list[str]:
     choices = []
     for key, info in SOURCES.items():
-        # Skip sources that require a different cloud
         if info["cloud_req"] and info["cloud_req"] != cloud:
             continue
         choices.append(questionary.Choice(info["label"], value=key))
@@ -107,16 +119,32 @@ def select_sources(cloud: str) -> list[str]:
     return selected
 
 
+def _random_suffix(length: int = 4) -> str:
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
+
 def get_catalog_prefix() -> tuple[str, str]:
+    default_query = "lhf_query"
+    default_catalog = "lhf_catalog"
+
     query_prefix = questionary.text(
         "Query Federation カタログ prefix:",
-        default="lhf_query",
+        default=default_query,
     ).ask()
 
     catalog_prefix = questionary.text(
         "Catalog Federation カタログ prefix:",
-        default="lhf_catalog",
+        default=default_catalog,
     ).ask()
+
+    # Add random suffix to avoid catalog name conflicts when using defaults
+    if query_prefix == default_query or catalog_prefix == default_catalog:
+        suffix = _random_suffix()
+        console.print(f"  [dim]衝突回避のため乱数サフィックス '{suffix}' を追加[/dim]")
+        if query_prefix == default_query:
+            query_prefix = f"{default_query}_{suffix}"
+        if catalog_prefix == default_catalog:
+            catalog_prefix = f"{default_catalog}_{suffix}"
 
     return query_prefix, catalog_prefix
 
@@ -137,7 +165,6 @@ def check_cloud_auth(cloud: str, sources: list[str]) -> dict:
             if result.returncode == 0:
                 console.print("  [green]✓[/green] AWS 認証済み")
             else:
-                # Try to find an SSO profile
                 console.print("  [yellow]![/yellow] AWS 未認証 — SSO プロファイルを検索中...")
                 profile = questionary.text(
                     "AWS SSO profile name (例: aws-sandbox-field-eng_databricks-sandbox-admin):",
@@ -297,7 +324,6 @@ def generate_tfvars(
     # Add credentials
     for key, val in creds.items():
         if key == "gcp_credentials_json" and val:
-            # Multi-line JSON needs special handling
             escaped = val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             lines.append(f'{key} = "{escaped}"')
         else:
@@ -344,7 +370,133 @@ def deploy_dab(workspace_url: str):
         console.print("[yellow]! DAB deploy failed (non-critical)[/yellow]\n")
 
 
-def print_summary(cloud: str, workspace_url: str, sources: list[str]):
+def get_terraform_outputs() -> dict:
+    """Fetch terraform output as JSON."""
+    result = subprocess.run(
+        ["terraform", "output", "-json"],
+        cwd=TERRAFORM_DIR,
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return {}
+    try:
+        raw = json.loads(result.stdout)
+        return {k: v.get("value") for k, v in raw.items()}
+    except (json.JSONDecodeError, AttributeError):
+        return {}
+
+
+def generate_deploy_result(
+    cloud: str,
+    workspace_url: str,
+    sources: list[str],
+    query_prefix: str,
+    catalog_prefix: str,
+):
+    """Generate deploy_result.md with access links and resource tree."""
+    outputs = get_terraform_outputs()
+    catalogs = outputs.get("databricks_catalogs", {})
+    db_names = outputs.get("database_names", {})
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    lines = [
+        "# Lakehouse Federation Demo - Deploy Result",
+        "",
+        f"**Deployed at**: {now}",
+        f"**Cloud**: {cloud}",
+        f"**Workspace**: {workspace_url}",
+        "",
+        "---",
+        "",
+        "## Access Links",
+        "",
+        f"| Resource | URL |",
+        f"|----------|-----|",
+        f"| Databricks Workspace | {workspace_url} |",
+        f"| Demo Notebook | {workspace_url}/#workspace/Shared/lakehouse_federation_demo/notebooks/federation_demo |",
+    ]
+
+    if "glue" in sources:
+        lines.append(f"| AWS Glue Console | https://{outputs.get('s3_bucket_name', 'us-west-2')}.console.aws.amazon.com/glue/ |")
+    if "redshift" in sources and outputs.get("redshift_endpoint"):
+        lines.append(f"| Redshift Endpoint | `{outputs['redshift_endpoint']}:5439` |")
+    if "postgres" in sources and outputs.get("postgres_endpoint"):
+        lines.append(f"| PostgreSQL Endpoint | `{outputs['postgres_endpoint']}:5432` |")
+    if "synapse" in sources and outputs.get("synapse_endpoint"):
+        lines.append(f"| Synapse Endpoint | `{outputs['synapse_endpoint']}:1433` |")
+    if "bigquery" in sources:
+        lines.append(f"| BigQuery Console | https://console.cloud.google.com/bigquery |")
+
+    lines += [
+        "",
+        "---",
+        "",
+        "## Deployed Resource Tree",
+        "",
+        "```",
+        "Unity Catalog",
+    ]
+
+    # Catalog Federation sources
+    for src in ["glue", "onelake"]:
+        if src not in sources:
+            continue
+        cat_name = catalogs.get(src, f"{catalog_prefix}_{src}")
+        db = db_names.get(src, "default")
+        prefix = "catalog" if src != "onelake" else "catalog"
+        lines.append(f"├── {cat_name}  (Catalog Federation: {SOURCES[src]['label']})")
+        tables = SOURCE_TABLES.get(src, [])
+        lines.append(f"│   └── {db}")
+        for i, t in enumerate(tables):
+            connector = "├" if i < len(tables) - 1 else "└"
+            lines.append(f"│       {connector}── {t}")
+
+    # Query Federation sources
+    for src in ["redshift", "postgres", "synapse", "bigquery"]:
+        if src not in sources:
+            continue
+        cat_name = catalogs.get(src, f"{query_prefix}_{src}")
+        db = db_names.get(src, "unknown")
+        schema = "dbo" if src == "synapse" else (db_names.get(src, "unknown") if src == "bigquery" else "public")
+        lines.append(f"├── {cat_name}  (Query Federation: {SOURCES[src]['label']})")
+        lines.append(f"│   └── {schema}")
+        tables = SOURCE_TABLES.get(src, [])
+        for i, t in enumerate(tables):
+            connector = "├" if i < len(tables) - 1 else "└"
+            lines.append(f"│       {connector}── {t}")
+
+    lines += [
+        "```",
+        "",
+        "---",
+        "",
+        "## Databricks Catalogs",
+        "",
+        "| Source | Catalog Name | Database/Schema | Tables |",
+        "|--------|-------------|-----------------|--------|",
+    ]
+
+    for src in sources:
+        cat = catalogs.get(src, "N/A")
+        db = db_names.get(src, "N/A")
+        tables = ", ".join(SOURCE_TABLES.get(src, []))
+        lines.append(f"| {SOURCES[src]['label']} | `{cat}` | `{db}` | {tables} |")
+
+    lines += [""]
+
+    result_path = PROJECT_ROOT / "deploy_result.md"
+    result_path.write_text("\n".join(lines) + "\n")
+    console.print(f"[green]✓[/green] Generated {result_path}")
+    return result_path
+
+
+def print_summary(
+    cloud: str,
+    workspace_url: str,
+    sources: list[str],
+    query_prefix: str,
+    catalog_prefix: str,
+):
     """Print deployed resource summary."""
     console.print("\n")
     console.print(Panel("[bold green]Deploy Complete![/bold green]", border_style="green"))
@@ -362,6 +514,10 @@ def print_summary(cloud: str, workspace_url: str, sources: list[str]):
 
     console.print(f"\n[bold]Databricks Workspace:[/bold] {workspace_url}")
     console.print(f"[bold]Demo Notebook:[/bold] {workspace_url}/#workspace/Shared/lakehouse_federation_demo/notebooks/federation_demo")
+
+    # Generate deploy_result.md
+    result_path = generate_deploy_result(cloud, workspace_url, sources, query_prefix, catalog_prefix)
+    console.print(f"\n[bold]Deploy Result:[/bold] {result_path}")
 
     # Print terraform outputs
     console.print("\n[bold]Terraform Outputs:[/bold]")
@@ -394,7 +550,7 @@ def main():
     generate_tfvars(cloud, workspace_url, sources, query_prefix, catalog_prefix, creds)
     run_terraform()
     deploy_dab(workspace_url)
-    print_summary(cloud, workspace_url, sources)
+    print_summary(cloud, workspace_url, sources, query_prefix, catalog_prefix)
 
 
 if __name__ == "__main__":

@@ -63,7 +63,7 @@ resource "aws_db_instance" "postgres" {
   allocated_storage = 20
   storage_type      = "gp3"
 
-  db_name  = "factory_db"
+  db_name  = local.postgres_db_name
   username = "pgadmin"
   password = var.postgres_admin_password
 
@@ -91,15 +91,15 @@ resource "null_resource" "postgres_init" {
       PGHOST='${aws_db_instance.postgres[0].address}'
 
       echo "Creating tables..."
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/create_maintenance_logs.sql
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/create_work_orders.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_maintenance_logs.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/create_work_orders.sql
 
       echo "Inserting data..."
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/insert_maintenance_logs.sql
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/insert_work_orders.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_maintenance_logs.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/insert_work_orders.sql
 
       echo "Adding comments..."
-      psql -h "$PGHOST" -U pgadmin -d factory_db -f ${path.module}/sql/postgres/comments.sql
+      psql -h "$PGHOST" -U pgadmin -d ${local.postgres_db_name} -f ${path.module}/sql/postgres/comments.sql
 
       echo "PostgreSQL initialization complete."
     EOT

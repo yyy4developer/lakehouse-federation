@@ -44,6 +44,24 @@ output "bigquery_dataset" {
   value       = var.enable_bigquery ? google_bigquery_dataset.factory[0].dataset_id : null
 }
 
+# ----- Database Names -----
+output "database_names" {
+  description = "Map of source database/schema names"
+  value = merge(
+    var.enable_glue ? { glue = local.glue_database_name } : {},
+    var.enable_redshift ? { redshift = local.redshift_db_name } : {},
+    var.enable_postgres ? { postgres = local.postgres_db_name } : {},
+    var.enable_synapse ? { synapse = local.synapse_db_name } : {},
+    var.enable_bigquery ? { bigquery = local.bigquery_dataset } : {},
+  )
+}
+
+# ----- Random Suffix -----
+output "suffix" {
+  description = "Random suffix used for this deployment"
+  value       = local.suffix
+}
+
 # ----- Databricks Catalogs -----
 output "databricks_catalogs" {
   description = "Map of deployed Databricks foreign catalogs"

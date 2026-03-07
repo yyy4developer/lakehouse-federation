@@ -80,19 +80,23 @@ resource "null_resource" "synapse_init" {
       echo "Getting Azure AD token for serverless database creation..."
       TOKEN=$(az account get-access-token --resource https://sql.azuresynapse.net --query accessToken -o tsv)
 
-      echo "Creating serverless database factory_analytics..."
+      echo "Creating serverless database ${local.synapse_db_name}..."
       sqlcmd -S "$SYNAPSE_ONDEMAND" -d master -P "$TOKEN" -G \
-        -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'factory_analytics') CREATE DATABASE factory_analytics COLLATE Latin1_General_100_BIN2_UTF8"
+        -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '${local.synapse_db_name}') CREATE DATABASE ${local.synapse_db_name} COLLATE Latin1_General_100_BIN2_UTF8"
 
       echo "Setting up sqladmin user..."
-      sqlcmd -S "$SYNAPSE_ONDEMAND" -d factory_analytics -P "$TOKEN" -G \
+      sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -P "$TOKEN" -G \
         -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'sqladmin') CREATE USER sqladmin FROM LOGIN sqladmin; ALTER ROLE db_owner ADD MEMBER sqladmin;"
 
       echo "Creating views with sample data..."
-      sqlcmd -S "$SYNAPSE_ONDEMAND" -d factory_analytics -U sqladmin -P '${var.synapse_admin_password}' \
+      sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -U sqladmin -P '${var.synapse_admin_password}' \
         -i ${path.module}/sql/synapse/create_shift_schedules.sql
-      sqlcmd -S "$SYNAPSE_ONDEMAND" -d factory_analytics -U sqladmin -P '${var.synapse_admin_password}' \
+      sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -U sqladmin -P '${var.synapse_admin_password}' \
         -i ${path.module}/sql/synapse/create_energy_consumption.sql
+
+      echo "Adding comments..."
+      sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -U sqladmin -P '${var.synapse_admin_password}' \
+        -i ${path.module}/sql/synapse/comments.sql
 
       echo "Synapse initialization complete."
     EOT

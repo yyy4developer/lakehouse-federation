@@ -18,6 +18,24 @@
 -- COMMAND ----------
 
 -- MAGIC %md
+-- MAGIC ## 設定
+-- MAGIC
+-- MAGIC デプロイ時のカタログ名に合わせて、以下のウィジェットを更新してください。
+-- MAGIC 正しい値は `deploy_result.md` に記載されています。
+-- MAGIC
+-- MAGIC - **query_prefix**: Query Federation カタログの prefix（例: `lhf_query_ab12`）
+-- MAGIC - **catalog_prefix**: Catalog Federation カタログの prefix（例: `lhf_catalog_ab12`）
+-- MAGIC - **db_prefix**: データベース/スキーマ名の prefix（例: `lhf_demo`）
+
+-- COMMAND ----------
+
+CREATE WIDGET TEXT query_prefix DEFAULT 'lhf_query';
+CREATE WIDGET TEXT catalog_prefix DEFAULT 'lhf_catalog';
+CREATE WIDGET TEXT db_prefix DEFAULT 'lhf_demo';
+
+-- COMMAND ----------
+
+-- MAGIC %md
 -- MAGIC ---
 -- MAGIC # 第1章: メタデータ統合（Lakehouse Federation）
 -- MAGIC
@@ -33,13 +51,13 @@
 -- MAGIC │                          Databricks Unity Catalog                               │
 -- MAGIC │                                                                                 │
 -- MAGIC │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐                │
--- MAGIC │  │ lhf_catalog_glue │ │ lhf_query_redshift│ │ lhf_query_postgres│               │
--- MAGIC │  │ (Catalog Fed.)   │ │ (Query Fed.)      │ │ (Query Fed.)      │               │
+-- MAGIC │  │ *_catalog_glue   │ │ *_query_redshift  │ │ *_query_postgres │                │
+-- MAGIC │  │ (Catalog Fed.)   │ │ (Query Fed.)      │ │ (Query Fed.)     │                │
 -- MAGIC │  └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘                │
 -- MAGIC │           │                     │                     │                          │
 -- MAGIC │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐                │
--- MAGIC │  │ lhf_query_synapse│ │ lhf_query_bigquery│ │lhf_catalog_onelake│               │
--- MAGIC │  │ (Query Fed.)     │ │ (Query Fed.)      │ │ (Catalog Fed.)    │               │
+-- MAGIC │  │ *_query_synapse  │ │ *_query_bigquery  │ │*_catalog_onelake │                │
+-- MAGIC │  │ (Query Fed.)     │ │ (Query Fed.)      │ │ (Catalog Fed.)   │                │
 -- MAGIC │  └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘                │
 -- MAGIC │           │                     │                     │                          │
 -- MAGIC └───────────┼─────────────────────┼─────────────────────┼──────────────────────────┘
@@ -63,22 +81,22 @@
 -- MAGIC
 -- MAGIC > デプロイ時に選択したソースのみ利用可能です。未デプロイのセクションはスキップしてください。
 -- MAGIC
--- MAGIC | カタログ | テーブル | フォーマット | データ種別 | 行数 |
--- MAGIC |---------|---------|------------|-----------|------|
--- MAGIC | `lhf_catalog_glue` | `sensors` | Parquet | センサーマスタ | 20 |
--- MAGIC | `lhf_catalog_glue` | `machines` | Delta | 機械マスタ | 10 |
--- MAGIC | `lhf_catalog_glue` | `quality_inspections` | Iceberg | 品質検査 | 50 |
--- MAGIC | `lhf_query_redshift` | `sensor_readings` | - | センサー読取値 | 100 |
--- MAGIC | `lhf_query_redshift` | `production_events` | - | 生産イベント | 30 |
--- MAGIC | `lhf_query_redshift` | `quality_inspections` | - | 品質検査 | 40 |
--- MAGIC | `lhf_query_postgres` | `maintenance_logs` | - | 保守ログ | 30 |
--- MAGIC | `lhf_query_postgres` | `work_orders` | - | 作業指示書 | 25 |
--- MAGIC | `lhf_query_synapse` | `shift_schedules` | - | シフトスケジュール | 40 |
--- MAGIC | `lhf_query_synapse` | `energy_consumption` | - | 電力消費量 | 50 |
--- MAGIC | `lhf_query_bigquery` | `downtime_records` | - | 稼働停止記録 | 35 |
--- MAGIC | `lhf_query_bigquery` | `cost_allocation` | - | コスト配分 | 30 |
--- MAGIC | `lhf_catalog_onelake` | `production_plans` | - | 生産計画 | 20 |
--- MAGIC | `lhf_catalog_onelake` | `inventory_levels` | - | 在庫水準 | 30 |
+-- MAGIC | カタログ | スキーマ | テーブル | データ種別 | 行数 |
+-- MAGIC |---------|---------|---------|-----------|------|
+-- MAGIC | `${catalog_prefix}_glue` | `${db_prefix}_factory_master` | `sensors` | センサーマスタ (Parquet) | 20 |
+-- MAGIC | `${catalog_prefix}_glue` | `${db_prefix}_factory_master` | `machines` | 機械マスタ (Delta) | 10 |
+-- MAGIC | `${catalog_prefix}_glue` | `${db_prefix}_factory_master` | `quality_inspections` | 品質検査 (Iceberg) | 50 |
+-- MAGIC | `${query_prefix}_redshift` | `public` | `sensor_readings` | センサー読取値 | 100 |
+-- MAGIC | `${query_prefix}_redshift` | `public` | `production_events` | 生産イベント | 30 |
+-- MAGIC | `${query_prefix}_redshift` | `public` | `quality_inspections` | 品質検査 | 40 |
+-- MAGIC | `${query_prefix}_postgres` | `public` | `maintenance_logs` | 保守ログ | 30 |
+-- MAGIC | `${query_prefix}_postgres` | `public` | `work_orders` | 作業指示書 | 25 |
+-- MAGIC | `${query_prefix}_synapse` | `dbo` | `shift_schedules` | シフトスケジュール | 40 |
+-- MAGIC | `${query_prefix}_synapse` | `dbo` | `energy_consumption` | 電力消費量 | 50 |
+-- MAGIC | `${query_prefix}_bigquery` | `${db_prefix}_factory` | `downtime_records` | 稼働停止記録 | 35 |
+-- MAGIC | `${query_prefix}_bigquery` | `${db_prefix}_factory` | `cost_allocation` | コスト配分 | 30 |
+-- MAGIC | `${catalog_prefix}_onelake` | `default` | `production_plans` | 生産計画 | 20 |
+-- MAGIC | `${catalog_prefix}_onelake` | `default` | `inventory_levels` | 在庫水準 | 30 |
 
 -- COMMAND ----------
 
@@ -92,17 +110,17 @@
 -- COMMAND ----------
 
 -- センサーマスタデータ（Parquet）
-SELECT * FROM lhf_catalog_glue.lhf_demo_factory_master.sensors;
+SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.sensors');
 
 -- COMMAND ----------
 
 -- 機械マスタデータ（Delta）
-SELECT * FROM lhf_catalog_glue.lhf_demo_factory_master.machines;
+SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines');
 
 -- COMMAND ----------
 
 -- 品質検査データ（Iceberg）
-SELECT * FROM lhf_catalog_glue.lhf_demo_factory_master.quality_inspections;
+SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.quality_inspections');
 
 -- COMMAND ----------
 
@@ -116,17 +134,17 @@ SELECT * FROM lhf_catalog_glue.lhf_demo_factory_master.quality_inspections;
 -- COMMAND ----------
 
 -- センサー読取データ
-SELECT * FROM lhf_query_redshift.public.sensor_readings;
+SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.sensor_readings');
 
 -- COMMAND ----------
 
 -- 生産イベントデータ
-SELECT * FROM lhf_query_redshift.public.production_events;
+SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.production_events');
 
 -- COMMAND ----------
 
 -- 品質検査データ
-SELECT * FROM lhf_query_redshift.public.quality_inspections;
+SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.quality_inspections');
 
 -- COMMAND ----------
 
@@ -140,12 +158,12 @@ SELECT * FROM lhf_query_redshift.public.quality_inspections;
 -- COMMAND ----------
 
 -- 保守ログ
-SELECT * FROM lhf_query_postgres.public.maintenance_logs;
+SELECT * FROM IDENTIFIER('${query_prefix}_postgres' || '.public.maintenance_logs');
 
 -- COMMAND ----------
 
 -- 作業指示書
-SELECT * FROM lhf_query_postgres.public.work_orders;
+SELECT * FROM IDENTIFIER('${query_prefix}_postgres' || '.public.work_orders');
 
 -- COMMAND ----------
 
@@ -159,12 +177,12 @@ SELECT * FROM lhf_query_postgres.public.work_orders;
 -- COMMAND ----------
 
 -- シフトスケジュール
-SELECT * FROM lhf_query_synapse.dbo.shift_schedules;
+SELECT * FROM IDENTIFIER('${query_prefix}_synapse' || '.dbo.shift_schedules');
 
 -- COMMAND ----------
 
 -- 電力消費量
-SELECT * FROM lhf_query_synapse.dbo.energy_consumption;
+SELECT * FROM IDENTIFIER('${query_prefix}_synapse' || '.dbo.energy_consumption');
 
 -- COMMAND ----------
 
@@ -178,12 +196,12 @@ SELECT * FROM lhf_query_synapse.dbo.energy_consumption;
 -- COMMAND ----------
 
 -- 稼働停止記録
-SELECT * FROM lhf_query_bigquery.factory.downtime_records;
+SELECT * FROM IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.downtime_records');
 
 -- COMMAND ----------
 
 -- コスト配分
-SELECT * FROM lhf_query_bigquery.factory.cost_allocation;
+SELECT * FROM IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.cost_allocation');
 
 -- COMMAND ----------
 
@@ -197,12 +215,12 @@ SELECT * FROM lhf_query_bigquery.factory.cost_allocation;
 -- COMMAND ----------
 
 -- 生産計画
-SELECT * FROM lhf_catalog_onelake.default.production_plans;
+SELECT * FROM IDENTIFIER('${catalog_prefix}_onelake' || '.default.production_plans');
 
 -- COMMAND ----------
 
 -- 在庫水準
-SELECT * FROM lhf_catalog_onelake.default.inventory_levels;
+SELECT * FROM IDENTIFIER('${catalog_prefix}_onelake' || '.default.inventory_levels');
 
 -- COMMAND ----------
 
@@ -283,7 +301,7 @@ WITH sensor_summary AS (
     r.machine_id,
     COUNT(CASE WHEN r.status = 'warning' THEN 1 END) AS sensor_warnings,
     COUNT(CASE WHEN r.status = 'critical' THEN 1 END) AS sensor_criticals
-  FROM lhf_query_redshift.public.sensor_readings r
+  FROM IDENTIFIER('${query_prefix}_redshift' || '.public.sensor_readings') r
   GROUP BY r.machine_id
 ),
 event_summary AS (
@@ -291,13 +309,13 @@ event_summary AS (
     e.machine_id,
     COUNT(CASE WHEN e.event_type = 'error' THEN 1 END) AS error_count,
     SUM(CASE WHEN e.event_type = 'maintenance' THEN e.duration_minutes ELSE 0 END) AS maintenance_minutes
-  FROM lhf_query_redshift.public.production_events e
+  FROM IDENTIFIER('${query_prefix}_redshift' || '.public.production_events') e
   GROUP BY e.machine_id
 ),
 quality_all AS (
-  SELECT machine_id, result, defect_count FROM lhf_catalog_glue.lhf_demo_factory_master.quality_inspections
+  SELECT machine_id, result, defect_count FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.quality_inspections')
   UNION ALL
-  SELECT machine_id, result, defect_count FROM lhf_query_redshift.public.quality_inspections
+  SELECT machine_id, result, defect_count FROM IDENTIFIER('${query_prefix}_redshift' || '.public.quality_inspections')
 ),
 quality_agg AS (
   SELECT
@@ -324,7 +342,7 @@ SELECT
   COALESCE(qa.failed_inspections, 0) AS failed_inspection_count,
   COALESCE(qa.total_defects, 0) AS total_defect_count,
   ROUND(COALESCE(qa.passed_inspections, 0) * 100.0 / NULLIF(qa.total_inspections, 0), 1) AS quality_pass_rate_pct
-FROM lhf_catalog_glue.lhf_demo_factory_master.machines m
+FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
 LEFT JOIN sensor_summary ss ON m.machine_id = ss.machine_id
 LEFT JOIN event_summary es ON m.machine_id = es.machine_id
 LEFT JOIN quality_agg qa ON m.machine_id = qa.machine_id;
@@ -350,9 +368,9 @@ SELECT
   COUNT(ml.log_id) AS maintenance_log_count,
   COUNT(wo.order_id) AS work_order_count,
   COUNT(CASE WHEN wo.status = 'open' THEN 1 END) AS open_work_orders
-FROM lhf_catalog_glue.lhf_demo_factory_master.machines m
-LEFT JOIN lhf_query_postgres.public.maintenance_logs ml ON m.machine_id = ml.machine_id
-LEFT JOIN lhf_query_postgres.public.work_orders wo ON m.machine_id = wo.machine_id
+FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
+LEFT JOIN IDENTIFIER('${query_prefix}_postgres' || '.public.maintenance_logs') ml ON m.machine_id = ml.machine_id
+LEFT JOIN IDENTIFIER('${query_prefix}_postgres' || '.public.work_orders') wo ON m.machine_id = wo.machine_id
 GROUP BY m.machine_id, m.machine_name
 ORDER BY open_work_orders DESC;
 
@@ -366,9 +384,9 @@ SELECT
   COUNT(DISTINCT ss.shift_id) AS total_shifts,
   ROUND(SUM(ec.kwh_consumed), 2) AS total_kwh,
   ROUND(SUM(ec.cost_usd), 2) AS total_energy_cost_usd
-FROM lhf_catalog_glue.lhf_demo_factory_master.machines m
-LEFT JOIN lhf_query_synapse.dbo.shift_schedules ss ON m.machine_id = ss.machine_id
-LEFT JOIN lhf_query_synapse.dbo.energy_consumption ec ON m.machine_id = ec.machine_id
+FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
+LEFT JOIN IDENTIFIER('${query_prefix}_synapse' || '.dbo.shift_schedules') ss ON m.machine_id = ss.machine_id
+LEFT JOIN IDENTIFIER('${query_prefix}_synapse' || '.dbo.energy_consumption') ec ON m.machine_id = ec.machine_id
 GROUP BY m.machine_id, m.machine_name
 ORDER BY total_energy_cost_usd DESC;
 
@@ -381,9 +399,9 @@ SELECT
   m.machine_name,
   COUNT(dr.record_id) AS downtime_incidents,
   ROUND(SUM(ca.amount_usd), 2) AS total_allocated_cost_usd
-FROM lhf_catalog_glue.lhf_demo_factory_master.machines m
-LEFT JOIN lhf_query_bigquery.factory.downtime_records dr ON m.machine_id = dr.machine_id
-LEFT JOIN lhf_query_bigquery.factory.cost_allocation ca ON m.machine_id = ca.machine_id
+FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
+LEFT JOIN IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.downtime_records') dr ON m.machine_id = dr.machine_id
+LEFT JOIN IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.cost_allocation') ca ON m.machine_id = ca.machine_id
 GROUP BY m.machine_id, m.machine_name
 ORDER BY downtime_incidents DESC;
 
@@ -439,17 +457,17 @@ ORDER BY downtime_incidents DESC;
 -- 権限管理の例（実行前にユーザー/グループ名を適切に変更してください）
 
 -- カタログへのアクセス権付与
--- GRANT USE CATALOG ON CATALOG lhf_catalog_glue TO `data_team`;
--- GRANT USE CATALOG ON CATALOG lhf_query_redshift TO `data_team`;
+-- GRANT USE CATALOG ON CATALOG ${catalog_prefix}_glue TO `data_team`;
+-- GRANT USE CATALOG ON CATALOG ${query_prefix}_redshift TO `data_team`;
 
 -- スキーマへのアクセス権付与
--- GRANT USE SCHEMA ON SCHEMA lhf_catalog_glue.lhf_demo_factory_master TO `data_team`;
+-- GRANT USE SCHEMA ON SCHEMA ${catalog_prefix}_glue.${db_prefix}_factory_master TO `data_team`;
 
 -- テーブルへの SELECT 権限付与
--- GRANT SELECT ON TABLE lhf_catalog_glue.lhf_demo_factory_master.sensors TO `analyst`;
+-- GRANT SELECT ON TABLE ${catalog_prefix}_glue.${db_prefix}_factory_master.sensors TO `analyst`;
 
 -- 権限の取消
--- REVOKE SELECT ON TABLE lhf_catalog_glue.lhf_demo_factory_master.sensors FROM `analyst`;
+-- REVOKE SELECT ON TABLE ${catalog_prefix}_glue.${db_prefix}_factory_master.sensors FROM `analyst`;
 
 -- COMMAND ----------
 

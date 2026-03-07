@@ -35,3 +35,6 @@ tfplan
 
 # Databricks
 .databricks/
+
+# Deploy output (generated per deploy)
+deploy_result.md

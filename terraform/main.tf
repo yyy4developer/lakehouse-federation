@@ -18,6 +18,10 @@ terraform {
       source  = "databricks/databricks"
       version = "~> 1.58"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
     null = {
       source  = "hashicorp/null"
       version = "~> 3.0"
@@ -25,9 +29,27 @@ terraform {
   }
 }
 
+resource "random_string" "suffix" {
+  length  = 4
+  special = false
+  upper   = false
+}
+
 locals {
   skip_aws = !(var.enable_glue || var.enable_redshift || (var.enable_postgres && var.cloud == "aws"))
   skip_gcp = !var.enable_bigquery
+
+  # Random suffix for catalog prefix uniqueness (appended only when using defaults)
+  suffix = random_string.suffix.result
+
+  # Sanitized project prefix for database/schema names (replace - with _)
+  db_prefix = replace(var.project_prefix, "-", "_")
+
+  # Source database/schema names: {db_prefix}_factory
+  redshift_db_name  = "${local.db_prefix}_factory"
+  postgres_db_name  = "${local.db_prefix}_factory"
+  synapse_db_name   = "${local.db_prefix}_factory"
+  bigquery_dataset  = "${local.db_prefix}_factory"
 }
 
 # -----------------------------------------------------------------------------

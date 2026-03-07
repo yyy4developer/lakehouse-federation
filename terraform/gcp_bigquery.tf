@@ -5,7 +5,7 @@
 resource "google_bigquery_dataset" "factory" {
   count = var.enable_bigquery ? 1 : 0
 
-  dataset_id = "factory_analytics"
+  dataset_id = local.bigquery_dataset
   location   = "US"
 
   labels = {
@@ -59,10 +59,11 @@ resource "null_resource" "bigquery_init" {
   provisioner "local-exec" {
     command = <<-EOT
       echo "Inserting BigQuery data..."
-      bq query --project_id="${var.gcp_project_id}" --use_legacy_sql=false \
-        < ${path.module}/sql/bigquery/insert_downtime_records.sql
-      bq query --project_id="${var.gcp_project_id}" --use_legacy_sql=false \
-        < ${path.module}/sql/bigquery/insert_cost_allocation.sql
+      DATASET="${local.bigquery_dataset}"
+      sed "s/factory_analytics\\./$${DATASET}./g" ${path.module}/sql/bigquery/insert_downtime_records.sql | \
+        bq query --project_id="${var.gcp_project_id}" --use_legacy_sql=false
+      sed "s/factory_analytics\\./$${DATASET}./g" ${path.module}/sql/bigquery/insert_cost_allocation.sql | \
+        bq query --project_id="${var.gcp_project_id}" --use_legacy_sql=false
       echo "BigQuery initialization complete."
     EOT
   }
