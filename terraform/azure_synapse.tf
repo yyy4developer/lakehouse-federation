@@ -75,25 +75,40 @@ resource "null_resource" "synapse_init" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      set -e
       SYNAPSE_ONDEMAND="${azurerm_synapse_workspace.demo[0].name}-ondemand.sql.azuresynapse.net"
 
       echo "Waiting for firewall rules to propagate..."
-      sleep 15
+      sleep 20
 
       echo "Getting Azure AD token for serverless database creation..."
       TOKEN=$(az account get-access-token --resource https://sql.azuresynapse.net --query accessToken -o tsv)
 
       echo "Creating serverless database ${local.synapse_db_name}..."
-      for i in 1 2 3; do
-        sqlcmd -S "$SYNAPSE_ONDEMAND" -d master -P "$TOKEN" -G \
-          -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '${local.synapse_db_name}') CREATE DATABASE ${local.synapse_db_name} COLLATE Latin1_General_100_BIN2_UTF8" \
-          && break || { echo "  Retry $i..."; sleep 10; }
+      DB_CREATED=0
+      for i in 1 2 3 4 5; do
+        if sqlcmd -S "$SYNAPSE_ONDEMAND" -d master -P "$TOKEN" -G \
+          -Q "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '${local.synapse_db_name}') CREATE DATABASE ${local.synapse_db_name} COLLATE Latin1_General_100_BIN2_UTF8"; then
+          DB_CREATED=1
+          break
+        fi
+        echo "  Retry $i/5 (waiting 15s)..."
+        sleep 15
       done
 
+      if [ "$DB_CREATED" -eq 0 ]; then
+        echo "ERROR: Failed to create database after 5 retries"
+        exit 1
+      fi
+
       echo "Setting up sqladmin user..."
-      sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -P "$TOKEN" -G \
-        -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'sqladmin') CREATE USER sqladmin FROM LOGIN sqladmin; ALTER ROLE db_owner ADD MEMBER sqladmin;"
+      for i in 1 2 3; do
+        if sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -P "$TOKEN" -G \
+          -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'sqladmin') CREATE USER sqladmin FROM LOGIN sqladmin; ALTER ROLE db_owner ADD MEMBER sqladmin;"; then
+          break
+        fi
+        echo "  Retry user setup $i/3..."
+        sleep 10
+      done
 
       echo "Creating views with sample data..."
       sqlcmd -S "$SYNAPSE_ONDEMAND" -d ${local.synapse_db_name} -U sqladmin -P '${var.synapse_admin_password}' \

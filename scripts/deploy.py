@@ -9,6 +9,7 @@ import random
 import string
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,6 +40,21 @@ SOURCE_TABLES = {
     "synapse":  ["shift_schedules", "energy_consumption"],
     "bigquery": ["downtime_records", "cost_allocation"],
     "onelake":  ["production_plans", "inventory_levels"],
+}
+
+
+NOTEBOOK_TEMPLATE = PROJECT_ROOT / "notebooks" / "federation_demo_template.sql"
+NOTEBOOK_OUTPUT = PROJECT_ROOT / "notebooks" / "federation_demo.sql"
+
+# Mapping of source -> section markers in the notebook template
+# Each source maps to section header patterns that should be included
+SOURCE_SECTIONS = {
+    "glue":     ["1.1 Catalog Federation: AWS Glue"],
+    "redshift": ["1.2 Query Federation: Amazon Redshift"],
+    "postgres": ["1.3 Query Federation: PostgreSQL"],
+    "synapse":  ["1.4 Query Federation: Azure Synapse"],
+    "bigquery": ["1.5 Query Federation: Google BigQuery"],
+    "onelake":  ["1.6 Catalog Federation: Microsoft OneLake"],
 }
 
 
@@ -334,6 +350,98 @@ def generate_tfvars(
     console.print(f"\n[green]✓[/green] Generated {tfvars_path}")
 
 
+def generate_notebook(sources: list[str], query_prefix: str = "lhf_query", catalog_prefix: str = "lhf_catalog", db_prefix: str = "lhf_demo"):
+    """Generate federation_demo.sql with only the selected sources' sections."""
+    template = NOTEBOOK_TEMPLATE.read_text()
+
+    # Inject actual prefix values into DECLARE defaults
+    template = template.replace(
+        "DECLARE OR REPLACE query_prefix STRING DEFAULT 'lhf_query'",
+        f"DECLARE OR REPLACE query_prefix STRING DEFAULT '{query_prefix}'",
+    )
+    template = template.replace(
+        "DECLARE OR REPLACE catalog_prefix STRING DEFAULT 'lhf_catalog'",
+        f"DECLARE OR REPLACE catalog_prefix STRING DEFAULT '{catalog_prefix}'",
+    )
+    template = template.replace(
+        "DECLARE OR REPLACE db_prefix STRING DEFAULT 'lhf_demo'",
+        f"DECLARE OR REPLACE db_prefix STRING DEFAULT '{db_prefix}'",
+    )
+
+    commands = template.split("-- COMMAND ----------")
+
+    # Classify each command block
+    output_commands = []
+    current_source = None  # Track which source section we're in
+    skip_source = False
+
+    for cmd in commands:
+        # Check if this command starts a new source section (1.1 - 1.6)
+        new_source = None
+        for src, patterns in SOURCE_SECTIONS.items():
+            for pattern in patterns:
+                if pattern in cmd:
+                    new_source = src
+                    break
+            if new_source:
+                break
+
+        if new_source:
+            current_source = new_source
+            skip_source = new_source not in sources
+            if skip_source:
+                continue
+            output_commands.append(cmd)
+        elif current_source and skip_source:
+            # Still in a skipped source section - check if we hit a new major section
+            # (chapter 2, 3, 4 or another source section)
+            is_new_chapter = any(marker in cmd for marker in [
+                "# 第2章:", "# 第3章:", "# 第4章:",
+            ])
+            if is_new_chapter:
+                current_source = None
+                skip_source = False
+                output_commands.append(cmd)
+        else:
+            # Check for source-specific blocks in chapter 2 (cross-source JOINs)
+            # These have comments like "(enable_postgres = true の場合に実行)"
+            ch2_source_map = {
+                "postgres": "PostgreSQL: 保守履歴の統合",
+                "synapse": "Synapse: シフト・エネルギーの統合",
+                "bigquery": "BigQuery: 稼働停止・コスト分析",
+            }
+            skip_ch2 = False
+            for src, marker in ch2_source_map.items():
+                if marker in cmd and src not in sources:
+                    skip_ch2 = True
+                    break
+            if skip_ch2:
+                continue
+
+            # For the main cross-source JOIN in 2.2b, only include if glue+redshift are enabled
+            if "machine_health_summary" in cmd and "CREATE OR REPLACE TABLE" in cmd:
+                if "glue" not in sources or "redshift" not in sources:
+                    continue
+
+            # For the machine_health_summary SELECT check
+            if "machine_health_summary" in cmd and "ORDER BY sensor_critical_count" in cmd:
+                if "glue" not in sources or "redshift" not in sources:
+                    continue
+
+            # Remove "2.2c 追加ソースのJOIN" header if no extra sources
+            extra_sources = [s for s in ["postgres", "synapse", "bigquery"] if s in sources]
+            if "追加ソースのJOIN" in cmd and not extra_sources:
+                continue
+
+            output_commands.append(cmd)
+
+    # Update the data table in the intro section to only show deployed sources
+    filtered = "-- COMMAND ----------".join(output_commands)
+
+    NOTEBOOK_OUTPUT.write_text(filtered)
+    console.print(f"[green]✓[/green] Generated notebook with {len(sources)} source(s): {', '.join(sources)}")
+
+
 def run_terraform():
     """Run terraform init, plan, apply."""
     console.print("\n[bold]Terraform deployment...[/bold]\n")
@@ -370,6 +478,108 @@ def deploy_dab(workspace_url: str):
         console.print("[yellow]! DAB deploy failed (non-critical)[/yellow]\n")
 
 
+def run_notebook_job(workspace_url: str, query_prefix: str, catalog_prefix: str):
+    """Create and run a one-time job to execute the demo notebook."""
+    console.print("[bold]Running demo notebook...[/bold]\n")
+
+    token = _get_databricks_token(workspace_url)
+    if not token:
+        console.print("[yellow]! Could not get token. Skipping notebook run.[/yellow]\n")
+        return
+
+    warehouse_id = _get_warehouse_id(workspace_url, token)
+    if not warehouse_id:
+        console.print("[yellow]! No SQL warehouse found. Skipping notebook run.[/yellow]\n")
+        return
+
+    # Derive db_prefix from terraform outputs
+    outputs = get_terraform_outputs()
+    db_names = outputs.get("database_names", {})
+    sample_db = next(iter(db_names.values()), "lhf_demo_factory")
+    db_prefix = sample_db.rsplit("_factory", 1)[0]
+
+    notebook_path = _get_notebook_path(workspace_url, token)
+
+    job_payload = {
+        "run_name": "Federation Demo - Validation Run",
+        "tasks": [{
+            "task_key": "run_demo",
+            "notebook_task": {
+                "notebook_path": notebook_path,
+                "base_parameters": {
+                    "query_prefix": query_prefix,
+                    "catalog_prefix": catalog_prefix,
+                    "db_prefix": db_prefix,
+                },
+                "warehouse_id": warehouse_id,
+            },
+        }],
+    }
+
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "-X", "POST",
+             f"{workspace_url}/api/2.1/jobs/runs/submit",
+             "-H", f"Authorization: Bearer {token}",
+             "-H", "Content-Type: application/json",
+             "-d", json.dumps(job_payload)],
+            capture_output=True, text=True, timeout=30,
+        )
+        resp = json.loads(result.stdout)
+        run_id = resp.get("run_id")
+
+        if not run_id:
+            console.print(f"[yellow]! Job submit failed: {resp}[/yellow]\n")
+            return
+
+        console.print(f"  Run ID: {run_id}")
+        console.print(f"  URL: {workspace_url}/#job/run/{run_id}\n")
+
+        # Poll for completion (max 10 min)
+        for _ in range(60):
+            time.sleep(10)
+            poll = subprocess.run(
+                ["curl", "-s",
+                 f"{workspace_url}/api/2.1/jobs/runs/get?run_id={run_id}",
+                 "-H", f"Authorization: Bearer {token}"],
+                capture_output=True, text=True, timeout=15,
+            )
+            run_info = json.loads(poll.stdout)
+            state = run_info.get("state", {})
+            life_cycle = state.get("life_cycle_state", "")
+            result_state = state.get("result_state", "")
+
+            if life_cycle == "TERMINATED":
+                if result_state == "SUCCESS":
+                    console.print("[green]✓ Notebook run completed successfully[/green]\n")
+                else:
+                    msg = state.get("state_message", "")
+                    console.print(f"[yellow]! Notebook run finished: {result_state} - {msg}[/yellow]\n")
+                return
+            elif life_cycle in ("INTERNAL_ERROR", "SKIPPED"):
+                console.print(f"[red]✗ Notebook run failed: {life_cycle}[/red]\n")
+                return
+
+        console.print("[yellow]! Notebook run timed out (10 min). Check manually.[/yellow]\n")
+
+    except Exception as e:
+        console.print(f"[yellow]! Notebook job error: {e}[/yellow]\n")
+
+
+def _get_notebook_path(workspace_url: str, token: str) -> str:
+    """Get the deployed notebook path based on current user."""
+    try:
+        result = subprocess.run(
+            ["curl", "-s", f"{workspace_url}/api/2.0/preview/scim/v2/Me",
+             "-H", f"Authorization: Bearer {token}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        user_name = json.loads(result.stdout).get("userName", "unknown")
+    except Exception:
+        user_name = "unknown"
+    return f"/Users/{user_name}/.bundle/lakehouse_federation_demo/files/notebooks/federation_demo"
+
+
 def get_terraform_outputs() -> dict:
     """Fetch terraform output as JSON."""
     result = subprocess.run(
@@ -399,6 +609,10 @@ def generate_deploy_result(
     db_names = outputs.get("database_names", {})
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    # Get notebook path
+    token = _get_databricks_token(workspace_url)
+    nb_path = _get_notebook_path(workspace_url, token) if token else "/unknown"
+
     lines = [
         "# Lakehouse Federation Demo - Deploy Result",
         "",
@@ -413,7 +627,7 @@ def generate_deploy_result(
         f"| Resource | URL |",
         f"|----------|-----|",
         f"| Databricks Workspace | {workspace_url} |",
-        f"| Demo Notebook | {workspace_url}/#workspace/Shared/lakehouse_federation_demo/notebooks/federation_demo |",
+        f"| Demo Notebook | {workspace_url}/#workspace{nb_path} |",
     ]
 
     if "glue" in sources:
@@ -672,8 +886,10 @@ def print_summary(
 
     console.print(table)
 
+    token = _get_databricks_token(workspace_url)
+    nb_path = _get_notebook_path(workspace_url, token) if token else "/unknown"
     console.print(f"\n[bold]Databricks Workspace:[/bold] {workspace_url}")
-    console.print(f"[bold]Demo Notebook:[/bold] {workspace_url}/#workspace/Shared/lakehouse_federation_demo/notebooks/federation_demo")
+    console.print(f"[bold]Demo Notebook:[/bold] {workspace_url}/#workspace{nb_path}")
 
     # Run connectivity tests
     run_connectivity_test(workspace_url, sources, query_prefix, catalog_prefix)
@@ -711,8 +927,10 @@ def main():
         sys.exit(0)
 
     generate_tfvars(cloud, workspace_url, sources, query_prefix, catalog_prefix, creds)
+    generate_notebook(sources, query_prefix, catalog_prefix)
     run_terraform()
     deploy_dab(workspace_url)
+    run_notebook_job(workspace_url, query_prefix, catalog_prefix)
     print_summary(cloud, workspace_url, sources, query_prefix, catalog_prefix)
 
 

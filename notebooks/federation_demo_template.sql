@@ -29,9 +29,9 @@
 
 -- COMMAND ----------
 
-CREATE WIDGET TEXT query_prefix DEFAULT 'lhf_query';
-CREATE WIDGET TEXT catalog_prefix DEFAULT 'lhf_catalog';
-CREATE WIDGET TEXT db_prefix DEFAULT 'lhf_demo';
+DECLARE OR REPLACE query_prefix STRING DEFAULT 'lhf_query';
+DECLARE OR REPLACE catalog_prefix STRING DEFAULT 'lhf_catalog';
+DECLARE OR REPLACE db_prefix STRING DEFAULT 'lhf_demo';
 
 -- COMMAND ----------
 
@@ -110,17 +110,17 @@ CREATE WIDGET TEXT db_prefix DEFAULT 'lhf_demo';
 -- COMMAND ----------
 
 -- センサーマスタデータ（Parquet）
-SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.sensors');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.sensors');
 
 -- COMMAND ----------
 
 -- 機械マスタデータ（Delta）
-SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.machines');
 
 -- COMMAND ----------
 
 -- 品質検査データ（Iceberg）
-SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.quality_inspections');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.quality_inspections');
 
 -- COMMAND ----------
 
@@ -134,17 +134,17 @@ SELECT * FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factor
 -- COMMAND ----------
 
 -- センサー読取データ
-SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.sensor_readings');
+SELECT * FROM IDENTIFIER(query_prefix || '_redshift' || '.public.sensor_readings');
 
 -- COMMAND ----------
 
 -- 生産イベントデータ
-SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.production_events');
+SELECT * FROM IDENTIFIER(query_prefix || '_redshift' || '.public.production_events');
 
 -- COMMAND ----------
 
 -- 品質検査データ
-SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.quality_inspections');
+SELECT * FROM IDENTIFIER(query_prefix || '_redshift' || '.public.quality_inspections');
 
 -- COMMAND ----------
 
@@ -158,12 +158,12 @@ SELECT * FROM IDENTIFIER('${query_prefix}_redshift' || '.public.quality_inspecti
 -- COMMAND ----------
 
 -- 保守ログ
-SELECT * FROM IDENTIFIER('${query_prefix}_postgres' || '.public.maintenance_logs');
+SELECT * FROM IDENTIFIER(query_prefix || '_postgres' || '.public.maintenance_logs');
 
 -- COMMAND ----------
 
 -- 作業指示書
-SELECT * FROM IDENTIFIER('${query_prefix}_postgres' || '.public.work_orders');
+SELECT * FROM IDENTIFIER(query_prefix || '_postgres' || '.public.work_orders');
 
 -- COMMAND ----------
 
@@ -177,12 +177,12 @@ SELECT * FROM IDENTIFIER('${query_prefix}_postgres' || '.public.work_orders');
 -- COMMAND ----------
 
 -- シフトスケジュール
-SELECT * FROM IDENTIFIER('${query_prefix}_synapse' || '.dbo.shift_schedules');
+SELECT * FROM IDENTIFIER(query_prefix || '_synapse' || '.dbo.shift_schedules');
 
 -- COMMAND ----------
 
 -- 電力消費量
-SELECT * FROM IDENTIFIER('${query_prefix}_synapse' || '.dbo.energy_consumption');
+SELECT * FROM IDENTIFIER(query_prefix || '_synapse' || '.dbo.energy_consumption');
 
 -- COMMAND ----------
 
@@ -196,12 +196,12 @@ SELECT * FROM IDENTIFIER('${query_prefix}_synapse' || '.dbo.energy_consumption')
 -- COMMAND ----------
 
 -- 稼働停止記録
-SELECT * FROM IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.downtime_records');
+SELECT * FROM IDENTIFIER(query_prefix || '_bigquery' || '.' || db_prefix || '_factory' || '.downtime_records');
 
 -- COMMAND ----------
 
 -- コスト配分
-SELECT * FROM IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.cost_allocation');
+SELECT * FROM IDENTIFIER(query_prefix || '_bigquery' || '.' || db_prefix || '_factory' || '.cost_allocation');
 
 -- COMMAND ----------
 
@@ -215,12 +215,12 @@ SELECT * FROM IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_fact
 -- COMMAND ----------
 
 -- 生産計画
-SELECT * FROM IDENTIFIER('${catalog_prefix}_onelake' || '.default.production_plans');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_onelake' || '.default.production_plans');
 
 -- COMMAND ----------
 
 -- 在庫水準
-SELECT * FROM IDENTIFIER('${catalog_prefix}_onelake' || '.default.inventory_levels');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_onelake' || '.default.inventory_levels');
 
 -- COMMAND ----------
 
@@ -301,7 +301,7 @@ WITH sensor_summary AS (
     r.machine_id,
     COUNT(CASE WHEN r.status = 'warning' THEN 1 END) AS sensor_warnings,
     COUNT(CASE WHEN r.status = 'critical' THEN 1 END) AS sensor_criticals
-  FROM IDENTIFIER('${query_prefix}_redshift' || '.public.sensor_readings') r
+  FROM IDENTIFIER(query_prefix || '_redshift' || '.public.sensor_readings') r
   GROUP BY r.machine_id
 ),
 event_summary AS (
@@ -309,13 +309,13 @@ event_summary AS (
     e.machine_id,
     COUNT(CASE WHEN e.event_type = 'error' THEN 1 END) AS error_count,
     SUM(CASE WHEN e.event_type = 'maintenance' THEN e.duration_minutes ELSE 0 END) AS maintenance_minutes
-  FROM IDENTIFIER('${query_prefix}_redshift' || '.public.production_events') e
+  FROM IDENTIFIER(query_prefix || '_redshift' || '.public.production_events') e
   GROUP BY e.machine_id
 ),
 quality_all AS (
-  SELECT machine_id, result, defect_count FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.quality_inspections')
+  SELECT machine_id, result, defect_count FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.quality_inspections')
   UNION ALL
-  SELECT machine_id, result, defect_count FROM IDENTIFIER('${query_prefix}_redshift' || '.public.quality_inspections')
+  SELECT machine_id, result, defect_count FROM IDENTIFIER(query_prefix || '_redshift' || '.public.quality_inspections')
 ),
 quality_agg AS (
   SELECT
@@ -342,7 +342,7 @@ SELECT
   COALESCE(qa.failed_inspections, 0) AS failed_inspection_count,
   COALESCE(qa.total_defects, 0) AS total_defect_count,
   ROUND(COALESCE(qa.passed_inspections, 0) * 100.0 / NULLIF(qa.total_inspections, 0), 1) AS quality_pass_rate_pct
-FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
+FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.machines') m
 LEFT JOIN sensor_summary ss ON m.machine_id = ss.machine_id
 LEFT JOIN event_summary es ON m.machine_id = es.machine_id
 LEFT JOIN quality_agg qa ON m.machine_id = qa.machine_id;
@@ -368,9 +368,9 @@ SELECT
   COUNT(ml.log_id) AS maintenance_log_count,
   COUNT(wo.order_id) AS work_order_count,
   COUNT(CASE WHEN wo.status = 'open' THEN 1 END) AS open_work_orders
-FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
-LEFT JOIN IDENTIFIER('${query_prefix}_postgres' || '.public.maintenance_logs') ml ON m.machine_id = ml.machine_id
-LEFT JOIN IDENTIFIER('${query_prefix}_postgres' || '.public.work_orders') wo ON m.machine_id = wo.machine_id
+FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.machines') m
+LEFT JOIN IDENTIFIER(query_prefix || '_postgres' || '.public.maintenance_logs') ml ON m.machine_id = ml.machine_id
+LEFT JOIN IDENTIFIER(query_prefix || '_postgres' || '.public.work_orders') wo ON m.machine_id = wo.machine_id
 GROUP BY m.machine_id, m.machine_name
 ORDER BY open_work_orders DESC;
 
@@ -384,9 +384,9 @@ SELECT
   COUNT(DISTINCT ss.shift_id) AS total_shifts,
   ROUND(SUM(ec.kwh_consumed), 2) AS total_kwh,
   ROUND(SUM(ec.cost_usd), 2) AS total_energy_cost_usd
-FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
-LEFT JOIN IDENTIFIER('${query_prefix}_synapse' || '.dbo.shift_schedules') ss ON m.machine_id = ss.machine_id
-LEFT JOIN IDENTIFIER('${query_prefix}_synapse' || '.dbo.energy_consumption') ec ON m.machine_id = ec.machine_id
+FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.machines') m
+LEFT JOIN IDENTIFIER(query_prefix || '_synapse' || '.dbo.shift_schedules') ss ON m.machine_id = ss.machine_id
+LEFT JOIN IDENTIFIER(query_prefix || '_synapse' || '.dbo.energy_consumption') ec ON m.machine_id = ec.machine_id
 GROUP BY m.machine_id, m.machine_name
 ORDER BY total_energy_cost_usd DESC;
 
@@ -399,9 +399,9 @@ SELECT
   m.machine_name,
   COUNT(dr.record_id) AS downtime_incidents,
   ROUND(SUM(ca.amount_usd), 2) AS total_allocated_cost_usd
-FROM IDENTIFIER('${catalog_prefix}_glue' || '.' || '${db_prefix}_factory_master' || '.machines') m
-LEFT JOIN IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.downtime_records') dr ON m.machine_id = dr.machine_id
-LEFT JOIN IDENTIFIER('${query_prefix}_bigquery' || '.' || '${db_prefix}_factory' || '.cost_allocation') ca ON m.machine_id = ca.machine_id
+FROM IDENTIFIER(catalog_prefix || '_glue' || '.' || db_prefix || '_factory_master' || '.machines') m
+LEFT JOIN IDENTIFIER(query_prefix || '_bigquery' || '.' || db_prefix || '_factory' || '.downtime_records') dr ON m.machine_id = dr.machine_id
+LEFT JOIN IDENTIFIER(query_prefix || '_bigquery' || '.' || db_prefix || '_factory' || '.cost_allocation') ca ON m.machine_id = ca.machine_id
 GROUP BY m.machine_id, m.machine_name
 ORDER BY downtime_incidents DESC;
 

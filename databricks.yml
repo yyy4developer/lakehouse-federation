@@ -3,12 +3,14 @@ bundle:
 
 sync:
   include:
-    - "notebooks/**"
+    - "notebooks/federation_demo.sql"
+  exclude:
+    - "notebooks/federation_demo_template.sql"
+    - "terraform/**"
+    - "scripts/**"
 
 targets:
   dev:
-    mode: development
     default: true
     workspace:
-      host: ${DATABRICKS_HOST}
-      root_path: /Shared/lakehouse_federation_demo
+      root_path: ~/.bundle/${bundle.name}

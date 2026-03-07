@@ -38,3 +38,6 @@ tfplan
 
 # Deploy output (generated per deploy)
 deploy_result.md
+
+# Generated notebook (built from template per deploy)
+notebooks/federation_demo.sql
