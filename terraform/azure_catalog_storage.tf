@@ -6,7 +6,7 @@
 resource "azurerm_storage_account" "catalog" {
   count = var.cloud == "azure" ? 1 : 0
 
-  name                     = replace("${var.project_prefix}catalog", "-", "")
+  name                     = "${local.name_prefix_compact}cat"
   resource_group_name      = azurerm_resource_group.demo[0].name
   location                 = azurerm_resource_group.demo[0].location
   account_tier             = "Standard"
@@ -31,7 +31,7 @@ resource "azurerm_storage_container" "catalog" {
 resource "azurerm_databricks_access_connector" "catalog" {
   count = var.cloud == "azure" ? 1 : 0
 
-  name                = "${var.project_prefix}-access-connector"
+  name                = "${local.name_prefix}-access-connector"
   resource_group_name = azurerm_resource_group.demo[0].name
   location            = azurerm_resource_group.demo[0].location
 
@@ -55,7 +55,7 @@ resource "azurerm_role_assignment" "catalog_storage" {
 
 resource "databricks_storage_credential" "catalog" {
   count = var.cloud == "azure" ? 1 : 0
-  name  = "${var.project_prefix}-catalog-storage-cred"
+  name  = "${local.name_prefix}-catalog-storage-cred"
 
   azure_managed_identity {
     access_connector_id = azurerm_databricks_access_connector.catalog[0].id
@@ -68,7 +68,7 @@ resource "databricks_storage_credential" "catalog" {
 
 resource "databricks_external_location" "catalog" {
   count = var.cloud == "azure" ? 1 : 0
-  name  = "${var.project_prefix}-catalog-location"
+  name  = "${local.name_prefix}-catalog-location"
   url   = "abfss://${azurerm_storage_container.catalog[0].name}@${azurerm_storage_account.catalog[0].name}.dfs.core.windows.net/"
 
   credential_name = databricks_storage_credential.catalog[0].name

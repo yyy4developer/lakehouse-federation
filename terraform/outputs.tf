@@ -56,10 +56,15 @@ output "database_names" {
   )
 }
 
-# ----- Random Suffix -----
+# ----- Naming -----
 output "suffix" {
   description = "Random suffix used for this deployment"
   value       = local.suffix
+}
+
+output "name_prefix" {
+  description = "Resource naming prefix (project_prefix + suffix)"
+  value       = local.name_prefix
 }
 
 # ----- Databricks Catalogs -----

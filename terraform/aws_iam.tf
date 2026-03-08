@@ -11,8 +11,8 @@ locals {
   aws_account_id = data.aws_caller_identity.current.account_id
 
   # Pre-compute role names (used to construct ARNs before roles exist)
-  glue_role_name    = "${var.project_prefix}-databricks-glue"
-  storage_role_name = "${var.project_prefix}-databricks-storage"
+  glue_role_name    = "${local.name_prefix}-databricks-glue"
+  storage_role_name = "${local.name_prefix}-databricks-storage"
 
   # Glue database name: uses db_prefix for consistency with other sources
   glue_database_name = "${local.db_prefix}_factory_master"
@@ -43,7 +43,7 @@ resource "aws_iam_role" "databricks_glue" {
 resource "aws_iam_role_policy" "glue_access" {
   count = var.enable_glue ? 1 : 0
 
-  name = "${var.project_prefix}-glue-access"
+  name = "${local.name_prefix}-glue-access"
   role = aws_iam_role.databricks_glue[0].id
 
   policy = jsonencode({
@@ -104,7 +104,7 @@ resource "aws_iam_role" "databricks_storage" {
 resource "aws_iam_role_policy" "s3_read_access" {
   count = var.enable_glue ? 1 : 0
 
-  name = "${var.project_prefix}-s3-access"
+  name = "${local.name_prefix}-s3-access"
   role = aws_iam_role.databricks_storage[0].id
 
   policy = jsonencode({

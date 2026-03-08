@@ -5,7 +5,7 @@
 
 resource "databricks_external_location" "glue_data" {
   count           = var.enable_glue ? 1 : 0
-  name            = "${var.project_prefix}-glue-data"
+  name            = "${local.name_prefix}-glue-data"
   url             = "s3://${aws_s3_bucket.glue_data[0].id}"
   credential_name = databricks_storage_credential.glue_storage[0].name
   skip_validation = true

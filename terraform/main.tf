@@ -39,8 +39,12 @@ locals {
   skip_aws = !(var.enable_glue || var.enable_redshift || (var.enable_postgres && var.cloud == "aws"))
   skip_gcp = !var.enable_bigquery
 
-  # Random suffix for catalog prefix uniqueness (appended only when using defaults)
+  # Random suffix for multi-user uniqueness
   suffix = random_string.suffix.result
+
+  # Resource naming prefixes (suffix ensures no collisions between users)
+  name_prefix         = "${var.project_prefix}-${local.suffix}"                  # lhf-demo-xbmx
+  name_prefix_compact = "${replace(var.project_prefix, "-", "")}${local.suffix}" # lhfdemoxbmx (Azure Storage, max 24 chars)
 
   # Database/schema prefix: use var.db_prefix if set, otherwise fall back to project_prefix
   db_prefix = var.db_prefix != "" ? var.db_prefix : replace(var.project_prefix, "-", "_")

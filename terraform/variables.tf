@@ -130,11 +130,7 @@ variable "azure_region" {
   default     = "eastus"
 }
 
-variable "azure_resource_group_name" {
-  description = "Azure resource group name"
-  type        = string
-  default     = "lhf-demo-rg"
-}
+# azure_resource_group_name is now derived from local.name_prefix in azure_resource_group.tf
 
 variable "synapse_admin_password" {
   description = "Azure Synapse SQL admin password"

@@ -5,7 +5,7 @@
 resource "aws_security_group" "postgres" {
   count = (var.enable_postgres && var.cloud == "aws") ? 1 : 0
 
-  name_prefix = "${var.project_prefix}-postgres-"
+  name_prefix = "${local.name_prefix}-postgres-"
   vpc_id      = aws_vpc.main[0].id
   description = "Security group for RDS PostgreSQL"
 
@@ -33,7 +33,7 @@ resource "aws_security_group" "postgres" {
   }
 
   tags = {
-    Name = "${var.project_prefix}-postgres-sg"
+    Name = "${local.name_prefix}-postgres-sg"
   }
 
   lifecycle {
@@ -44,18 +44,18 @@ resource "aws_security_group" "postgres" {
 resource "aws_db_subnet_group" "postgres" {
   count = (var.enable_postgres && var.cloud == "aws") ? 1 : 0
 
-  name       = "${var.project_prefix}-postgres"
+  name       = "${local.name_prefix}-postgres"
   subnet_ids = aws_subnet.public[*].id
 
   tags = {
-    Name = "${var.project_prefix}-postgres-subnet-group"
+    Name = "${local.name_prefix}-postgres-subnet-group"
   }
 }
 
 resource "aws_db_instance" "postgres" {
   count = (var.enable_postgres && var.cloud == "aws") ? 1 : 0
 
-  identifier     = "${var.project_prefix}-postgres"
+  identifier     = "${local.name_prefix}-postgres"
   engine         = "postgres"
   engine_version = "16"
   instance_class = "db.t4g.micro"
@@ -73,7 +73,7 @@ resource "aws_db_instance" "postgres" {
   skip_final_snapshot    = true
 
   tags = {
-    Name = "${var.project_prefix}-postgres"
+    Name = "${local.name_prefix}-postgres"
   }
 }
 

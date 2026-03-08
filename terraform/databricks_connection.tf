@@ -5,7 +5,7 @@
 # AWS Glue (Catalog Federation)
 resource "databricks_connection" "glue" {
   count           = var.enable_glue ? 1 : 0
-  name            = "${var.project_prefix}-glue-conn"
+  name            = "${local.name_prefix}-glue-conn"
   connection_type = "GLUE"
 
   options = {
@@ -20,7 +20,7 @@ resource "databricks_connection" "glue" {
 # Amazon Redshift (Query Federation)
 resource "databricks_connection" "redshift" {
   count           = var.enable_redshift ? 1 : 0
-  name            = "${var.project_prefix}-redshift-conn"
+  name            = "${local.name_prefix}-redshift-conn"
   connection_type = "REDSHIFT"
 
   options = {
@@ -36,7 +36,7 @@ resource "databricks_connection" "redshift" {
 # PostgreSQL (Query Federation)
 resource "databricks_connection" "postgres" {
   count           = var.enable_postgres ? 1 : 0
-  name            = "${var.project_prefix}-postgres-conn"
+  name            = "${local.name_prefix}-postgres-conn"
   connection_type = "POSTGRESQL"
 
   options = {
@@ -56,7 +56,7 @@ resource "databricks_connection" "postgres" {
 # Azure Synapse (Query Federation)
 resource "databricks_connection" "synapse" {
   count           = var.enable_synapse ? 1 : 0
-  name            = "${var.project_prefix}-synapse-conn"
+  name            = "${local.name_prefix}-synapse-conn"
   connection_type = "SQLDW"
 
   options = {
@@ -73,7 +73,7 @@ resource "databricks_connection" "synapse" {
 # Google BigQuery (Query Federation)
 resource "databricks_connection" "bigquery" {
   count           = var.enable_bigquery && var.gcp_credentials_json != "" ? 1 : 0
-  name            = "${var.project_prefix}-bigquery-conn"
+  name            = "${local.name_prefix}-bigquery-conn"
   connection_type = "BIGQUERY"
 
   options = {
@@ -87,7 +87,7 @@ resource "databricks_connection" "bigquery" {
 # OneLake / Microsoft Fabric (Catalog Federation)
 resource "databricks_connection" "onelake" {
   count           = var.enable_onelake ? 1 : 0
-  name            = "${var.project_prefix}-onelake-conn"
+  name            = "${local.name_prefix}-onelake-conn"
   connection_type = "ONELAKE"
 
   options = {

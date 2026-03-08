@@ -6,7 +6,7 @@
 resource "azurerm_resource_group" "postgres" {
   count = (var.enable_postgres && var.cloud == "azure") ? 1 : 0
 
-  name     = "${var.azure_resource_group_name}-postgres"
+  name     = "${local.name_prefix}-rg-postgres"
   location = "westus2"
 
   tags = {
@@ -19,7 +19,7 @@ resource "azurerm_resource_group" "postgres" {
 resource "azurerm_postgresql_flexible_server" "postgres" {
   count = (var.enable_postgres && var.cloud == "azure") ? 1 : 0
 
-  name                = "${var.project_prefix}-postgres"
+  name                = "${local.name_prefix}-postgres"
   resource_group_name = azurerm_resource_group.postgres[0].name
   location            = azurerm_resource_group.postgres[0].location
 

@@ -19,7 +19,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "${var.project_prefix}-vpc"
+    Name = "${local.name_prefix}-vpc"
   }
 }
 
@@ -33,7 +33,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${var.project_prefix}-subnet-${count.index + 1}"
+    Name = "${local.name_prefix}-subnet-${count.index + 1}"
   }
 }
 
@@ -43,7 +43,7 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main[0].id
 
   tags = {
-    Name = "${var.project_prefix}-igw"
+    Name = "${local.name_prefix}-igw"
   }
 }
 
@@ -58,7 +58,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "${var.project_prefix}-rt-public"
+    Name = "${local.name_prefix}-rt-public"
   }
 }
 
@@ -72,7 +72,7 @@ resource "aws_route_table_association" "public" {
 resource "aws_security_group" "redshift" {
   count = var.enable_redshift ? 1 : 0
 
-  name_prefix = "${var.project_prefix}-redshift-"
+  name_prefix = "${local.name_prefix}-redshift-"
   vpc_id      = aws_vpc.main[0].id
   description = "Security group for Redshift Serverless"
 
@@ -101,7 +101,7 @@ resource "aws_security_group" "redshift" {
   }
 
   tags = {
-    Name = "${var.project_prefix}-redshift-sg"
+    Name = "${local.name_prefix}-redshift-sg"
   }
 
   lifecycle {

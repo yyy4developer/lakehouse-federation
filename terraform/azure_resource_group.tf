@@ -5,7 +5,7 @@
 resource "azurerm_resource_group" "demo" {
   count = (var.enable_synapse || var.enable_onelake || (var.enable_postgres && var.cloud == "azure")) ? 1 : 0
 
-  name     = var.azure_resource_group_name
+  name     = "${local.name_prefix}-rg"
   location = var.azure_region
 
   tags = {

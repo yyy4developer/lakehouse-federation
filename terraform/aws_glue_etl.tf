@@ -4,7 +4,7 @@
 
 resource "aws_iam_role" "glue_etl" {
   count = var.enable_glue ? 1 : 0
-  name  = "${var.project_prefix}-glue-etl"
+  name  = "${local.name_prefix}-glue-etl"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,7 +18,7 @@ resource "aws_iam_role" "glue_etl" {
 
 resource "aws_iam_role_policy" "glue_etl" {
   count = var.enable_glue ? 1 : 0
-  name  = "${var.project_prefix}-glue-etl-policy"
+  name  = "${local.name_prefix}-glue-etl-policy"
   role  = aws_iam_role.glue_etl[0].id
 
   policy = jsonencode({
@@ -76,7 +76,7 @@ resource "aws_s3_object" "glue_script" {
 
 resource "aws_glue_job" "data_generator" {
   count    = var.enable_glue ? 1 : 0
-  name     = "${var.project_prefix}-data-generator"
+  name     = "${local.name_prefix}-data-generator"
   role_arn = aws_iam_role.glue_etl[0].arn
 
   command {

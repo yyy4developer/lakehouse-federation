@@ -6,11 +6,11 @@
 resource "aws_s3_bucket" "glue_data" {
   count = var.enable_glue ? 1 : 0
 
-  bucket_prefix = "${var.project_prefix}-glue-data-"
+  bucket_prefix = "${local.name_prefix}-glue-data-"
   force_destroy = true
 
   tags = {
-    Name = "${var.project_prefix}-glue-data"
+    Name = "${local.name_prefix}-glue-data"
   }
 }
 
