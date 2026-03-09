@@ -19,6 +19,8 @@ resource "databricks_catalog" "glue" {
 
   comment = "外部カタログ: AWS Glue 工場マスタデータ（sensors, machines, quality_inspections）"
 
+  lifecycle { ignore_changes = [connection_name] }
+
   depends_on = [databricks_external_location.glue_data]
 }
 
@@ -35,6 +37,8 @@ resource "databricks_catalog" "redshift" {
   }
 
   comment = "外部カタログ: Redshift 工場トランザクションデータ（sensor_readings, production_events, quality_inspections）"
+
+  lifecycle { ignore_changes = [connection_name] }
 }
 
 # -----------------------------------------------------------------------------
@@ -50,6 +54,8 @@ resource "databricks_catalog" "postgres" {
   }
 
   comment = "外部カタログ: PostgreSQL 保守・作業指示データ（maintenance_logs, work_orders）"
+
+  lifecycle { ignore_changes = [connection_name] }
 }
 
 # -----------------------------------------------------------------------------
@@ -65,6 +71,8 @@ resource "databricks_catalog" "synapse" {
   }
 
   comment = "外部カタログ: Azure Synapse シフト・電力データ（shift_schedules, energy_consumption）"
+
+  lifecycle { ignore_changes = [connection_name] }
 }
 
 # -----------------------------------------------------------------------------
@@ -80,6 +88,8 @@ resource "databricks_catalog" "bigquery" {
   }
 
   comment = "外部カタログ: BigQuery 稼働停止・コストデータ（downtime_records, cost_allocation）"
+
+  lifecycle { ignore_changes = [connection_name] }
 }
 
 # -----------------------------------------------------------------------------
@@ -91,9 +101,13 @@ resource "databricks_catalog" "union" {
   comment       = "分析結果カタログ: クロスソース JOIN テーブルを格納（machine_health_summary 等）"
   force_destroy = true
 
-  storage_root = var.cloud == "azure" ? (
+  # When using custom catalog storage (same-tenant Azure), use our own storage
+  # When using workspace default storage (cross-tenant), use the workspace's storage path
+  storage_root = local.need_catalog_storage ? (
     "abfss://${azurerm_storage_container.catalog[0].name}@${azurerm_storage_account.catalog[0].name}.dfs.core.windows.net/${var.analysis_catalog}"
-  ) : null
+  ) : (
+    var.use_workspace_default_storage && var.workspace_default_storage_url != "" ? "${var.workspace_default_storage_url}/${var.analysis_catalog}" : null
+  )
 
   depends_on = [databricks_external_location.catalog]
 }
@@ -107,4 +121,6 @@ resource "databricks_catalog" "onelake" {
   connection_name = databricks_connection.onelake[0].name
 
   comment = "外部カタログ: OneLake 生産計画・在庫データ（production_plans, inventory_levels）"
+
+  lifecycle { ignore_changes = [connection_name] }
 }

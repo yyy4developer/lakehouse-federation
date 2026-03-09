@@ -430,6 +430,58 @@ def collect_credentials(cloud: str, sources: list[str], auto_creds: dict | None 
     return creds
 
 
+def _detect_workspace_default_storage(workspace_url: str, azure_subscription_id: str) -> str:
+    """Detect if workspace needs default storage (cross-tenant scenario).
+
+    Returns the workspace's default storage URL if cross-tenant, empty string otherwise.
+    """
+    import json as _json
+    import urllib.request
+
+    try:
+        # Get Databricks token via CLI
+        result = subprocess.run(
+            ["databricks", "auth", "token", "--host", workspace_url],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return ""
+        token = _json.loads(result.stdout).get("access_token", "")
+        if not token:
+            return ""
+
+        # Get storage credentials to find workspace's default storage
+        req = urllib.request.Request(
+            f"{workspace_url.rstrip('/')}/api/2.1/unity-catalog/storage-credentials",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+
+        creds_list = data.get("storage_credentials", [])
+        if not creds_list:
+            return ""
+
+        # Find the workspace's built-in credential (has path_filters with workspace ID)
+        for cred in creds_list:
+            ami = cred.get("azure_managed_identity", {})
+            ac_id = ami.get("access_connector_id", "")
+            # Check if the access connector is in a DIFFERENT subscription
+            if ac_id and azure_subscription_id and azure_subscription_id not in ac_id:
+                # Cross-tenant: extract storage URL from path_filters
+                pf = cred.get("path_filters", {}).get("allowlist", {}).get("path_prefixes", [])
+                if pf:
+                    ws_storage_url = pf[0].rstrip("/")
+                    console.print(
+                        f"\n[yellow]⚠[/yellow] ワークスペースが異なるAzureテナントにあります。"
+                        f"\n  ワークスペースのデフォルトストレージを使用します。"
+                    )
+                    return ws_storage_url
+    except Exception:
+        pass
+    return ""
+
+
 def generate_tfvars(
     cloud: str,
     workspace_url: str,
@@ -468,6 +520,17 @@ def generate_tfvars(
         "# AWS",
         f'aws_region = "us-west-2"',
     ]
+
+    # Auto-detect workspace default storage for Azure cross-tenant scenarios
+    if cloud == "azure":
+        ws_storage_url = _detect_workspace_default_storage(workspace_url, creds.get("azure_subscription_id", ""))
+        if ws_storage_url:
+            lines += [
+                "",
+                "# Workspace default storage (cross-tenant: workspace in different Azure tenant)",
+                f'use_workspace_default_storage = true',
+                f'workspace_default_storage_url = "{ws_storage_url}"',
+            ]
 
     # Add credentials
     for key, val in creds.items():
@@ -537,15 +600,19 @@ def generate_notebook(
             if skip_ch2:
                 continue
 
-            # Skip machine_health_summary if glue+redshift not both enabled
+            # Skip machine_health_summary if redshift not enabled (need sensor_readings)
             if "machine_health_summary" in cmd and ("CREATE OR REPLACE TABLE" in cmd or "ORDER BY sensor_critical_count" in cmd):
-                if "glue" not in sources or "redshift" not in sources:
+                if "redshift" not in sources:
+                    continue
+                # Also need machines table from glue or postgres
+                if "glue" not in sources and "postgres" not in sources:
                     continue
 
-            # Skip factory_operations_union if not all 5 sources enabled
-            all_five = {"glue", "redshift", "postgres", "synapse", "bigquery"}
+            # Skip factory_operations_union if not enough sources
+            # Need redshift + postgres + synapse + bigquery (Glue is optional, substituted by postgres)
+            required_for_union = {"redshift", "postgres", "synapse", "bigquery"}
             if "factory_operations_union" in cmd:
-                if not all_five.issubset(set(sources)):
+                if not required_for_union.issubset(set(sources)):
                     continue
 
             # Remove cross-source JOIN header if no extra sources
@@ -556,7 +623,35 @@ def generate_notebook(
             output_commands.append(cmd)
 
     job_content = "-- COMMAND ----------".join(output_commands)
+
+    # When Glue is not available, replace Glue table references with alternatives
+    if "glue" not in sources:
+        # machines: use PostgreSQL if available
+        if "postgres" in sources:
+            job_content = job_content.replace(
+                "catalog_prefix || '_glue.' || db_prefix || '_factory_master.machines",
+                "query_prefix || '_postgres.' || db_prefix || '.machines",
+            )
+        # quality_inspections: remove Glue line from UNION ALL (avoid duplicate with Redshift)
+        if "redshift" in sources:
+            # Remove the Glue quality_inspections line + UNION ALL from quality_all CTE
+            job_content = job_content.replace(
+                "  SELECT machine_id, result, defect_count FROM ' || catalog_prefix || '_glue.' || db_prefix || '_factory_master.quality_inspections\n  UNION ALL\n",
+                "",
+            )
+        # Any remaining Glue quality_inspections refs (outside UNION ALL)
+        job_content = job_content.replace(
+            "catalog_prefix || '_glue.' || db_prefix || '_factory_master.quality_inspections",
+            "query_prefix || '_redshift.' || db_prefix || '.quality_inspections" if "redshift" in sources else "",
+        )
+
     NOTEBOOK_OUTPUT.write_text(job_content)
+
+    # Also write cloud-specific notebooks (aws/azure) for DAB deployment
+    cloud = _read_tfvar("cloud") if DEPLOY_STATE_FILE.parent.exists() else ""
+    if cloud in ("aws", "azure"):
+        cloud_nb = PROJECT_ROOT / "notebooks" / f"federation_demo_{cloud}.sql"
+        cloud_nb.write_text(job_content)
 
     # Generate widget-based interactive version (cleaner SQL for UI use)
     widget_content = job_content
@@ -894,8 +989,12 @@ def generate_deploy_result(
         lines.append(f"| S3 (Glue Data) | https://s3.console.aws.amazon.com/s3/buckets/{outputs.get('s3_bucket_name', '')}?region={aws_region} |")
     if "redshift" in sources:
         lines.append(f"| Redshift Query Editor | https://{aws_region}.console.aws.amazon.com/sqlworkbench/home?region={aws_region}#/client |")
-    if "postgres" in sources and cloud == "aws":
-        lines.append(f"| RDS (PostgreSQL) | https://{aws_region}.console.aws.amazon.com/rds/home?region={aws_region}#database:id={project_prefix}-postgres |")
+    if "postgres" in sources:
+        if cloud == "aws":
+            lines.append(f"| RDS (PostgreSQL) | https://{aws_region}.console.aws.amazon.com/rds/home?region={aws_region}#database:id={project_prefix}-postgres |")
+        else:
+            name_prefix = outputs.get("name_prefix", "")
+            lines.append(f"| Azure PostgreSQL | https://portal.azure.com/#browse/Microsoft.DBforPostgreSQL%2FflexibleServers (search: {name_prefix}-postgres) |")
     if "synapse" in sources:
         synapse_ep = outputs.get("synapse_endpoint", "")
         synapse_ws_name = synapse_ep.replace("-ondemand.sql.azuresynapse.net", "") if synapse_ep else ""
@@ -1123,7 +1222,7 @@ def load_deploy_state() -> dict | None:
         return None
 
 
-def cleanup_notebook_objects(workspace_url: str, analysis_catalog: str):
+def cleanup_notebook_objects(workspace_url: str, analysis_catalog: str, db_prefix: str = "lhf_demo"):
     """Drop table and schema created by the demo notebook."""
     console.print("\n[bold]Cleaning up notebook-created objects...[/bold]")
 
@@ -1138,9 +1237,10 @@ def cleanup_notebook_objects(workspace_url: str, analysis_catalog: str):
         return
 
     cleanup_sqls = [
-        (f"DROP TABLE IF EXISTS {analysis_catalog}.lhf_demo.factory_operations_union", "factory_operations_union"),
-        (f"DROP TABLE IF EXISTS {analysis_catalog}.lhf_demo.machine_health_summary", "machine_health_summary"),
-        (f"DROP SCHEMA IF EXISTS {analysis_catalog}.lhf_demo CASCADE", "lhf_demo schema"),
+        (f"DROP TABLE IF EXISTS {analysis_catalog}.{db_prefix}.factory_operations_union", "factory_operations_union"),
+        (f"DROP TABLE IF EXISTS {analysis_catalog}.{db_prefix}.machine_health_summary", "machine_health_summary"),
+        (f"DROP SCHEMA IF EXISTS {analysis_catalog}.{db_prefix} CASCADE", f"{db_prefix} schema"),
+        (f"DROP CATALOG IF EXISTS {analysis_catalog} CASCADE", f"{analysis_catalog} catalog"),
     ]
 
     for sql, label in cleanup_sqls:
@@ -1246,6 +1346,8 @@ def destroy():
     workspace_url = state["workspace_url"]
     analysis_catalog = state.get("analysis_catalog", "main")
     sources = state.get("sources", [])
+    query_prefix = state.get("query_prefix", _read_tfvar("catalog_prefix_query") or "lhf_query")
+    db_prefix = query_prefix.removesuffix("_query")
 
     # Restore AWS_PROFILE from deploy state
     aws_profile = state.get("aws_profile")
@@ -1273,7 +1375,7 @@ def destroy():
     setup_databricks_auth(workspace_url)
 
     # 2. Cleanup notebook-created objects via SQL
-    cleanup_notebook_objects(workspace_url, analysis_catalog)
+    cleanup_notebook_objects(workspace_url, analysis_catalog, db_prefix)
 
     # 3. Terraform destroy
     console.print("\n[bold]Terraform destroy...[/bold]\n")

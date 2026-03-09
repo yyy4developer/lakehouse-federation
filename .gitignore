@@ -3,6 +3,8 @@
 *.tfstate
 *.tfstate.backup
 *.tfstate.*.backup
+*.tfstate.d/
+.terraform.tfstate.lock.info
 terraform.tfvars
 terraform.tfvars.*
 crash.log

@@ -130,6 +130,18 @@ variable "azure_region" {
   default     = "eastus"
 }
 
+variable "use_workspace_default_storage" {
+  description = "Use workspace default storage for union catalog (skip custom access connector/storage credential). Required when workspace is in a different Azure tenant."
+  type        = bool
+  default     = false
+}
+
+variable "workspace_default_storage_url" {
+  description = "Workspace default storage URL (e.g. abfss://container@account.dfs.core.windows.net/workspace_id). Required when use_workspace_default_storage = true."
+  type        = string
+  default     = ""
+}
+
 # azure_resource_group_name is now derived from local.name_prefix in azure_resource_group.tf
 
 variable "synapse_admin_password" {

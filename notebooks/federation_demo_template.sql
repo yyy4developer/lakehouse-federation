@@ -205,7 +205,7 @@ SELECT * FROM IDENTIFIER(catalog_prefix || '_onelake.default.inventory_levels');
 
 -- COMMAND ----------
 
-CREATE SCHEMA IF NOT EXISTS IDENTIFIER(analysis_catalog || '.lhf_demo');
+CREATE SCHEMA IF NOT EXISTS IDENTIFIER(analysis_catalog || '.' || db_prefix);
 
 -- COMMAND ----------
 
@@ -218,7 +218,7 @@ CREATE SCHEMA IF NOT EXISTS IDENTIFIER(analysis_catalog || '.lhf_demo');
 -- COMMAND ----------
 
 EXECUTE IMMEDIATE
-'CREATE OR REPLACE TABLE ' || analysis_catalog || '.lhf_demo.machine_health_summary AS
+'CREATE OR REPLACE TABLE ' || analysis_catalog || '.' || db_prefix || '.machine_health_summary AS
 WITH sensor_summary AS (
   SELECT
     r.machine_id,
@@ -269,7 +269,7 @@ LEFT JOIN quality_agg qa ON m.machine_id = qa.machine_id';
 
 -- COMMAND ----------
 
-SELECT * FROM IDENTIFIER(analysis_catalog || '.lhf_demo.machine_health_summary')
+SELECT * FROM IDENTIFIER(analysis_catalog || '.' || db_prefix || '.machine_health_summary')
 ORDER BY sensor_critical_count DESC, error_event_count DESC;
 
 -- COMMAND ----------
@@ -332,7 +332,7 @@ ORDER BY downtime_incidents DESC;
 -- COMMAND ----------
 
 EXECUTE IMMEDIATE
-'CREATE OR REPLACE TABLE ' || analysis_catalog || '.lhf_demo.factory_operations_union AS
+'CREATE OR REPLACE TABLE ' || analysis_catalog || '.' || db_prefix || '.factory_operations_union AS
 WITH glue_base AS (
   SELECT
     m.machine_id, m.machine_name, m.production_line, m.factory, m.status AS machine_status
@@ -421,7 +421,7 @@ LEFT JOIN bq_cost bc ON gb.machine_id = bc.machine_id';
 
 -- COMMAND ----------
 
-SELECT * FROM IDENTIFIER(analysis_catalog || '.lhf_demo.factory_operations_union')
+SELECT * FROM IDENTIFIER(analysis_catalog || '.' || db_prefix || '.factory_operations_union')
 ORDER BY machine_id;
 
 -- COMMAND ----------
