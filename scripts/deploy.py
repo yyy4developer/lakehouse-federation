@@ -357,7 +357,11 @@ def collect_credentials(cloud: str, sources: list[str], auto_creds: dict | None 
     """Collect passwords and credentials per source."""
     creds = dict(auto_creds or {})
 
-    default_pw = f"LhfDemo#{_random_suffix(6)}"
+    # Ensure password always contains at least one digit (Redshift requirement)
+    suffix = _random_suffix(6)
+    if not any(c.isdigit() for c in suffix):
+        suffix = suffix[:5] + random.choice(string.digits)
+    default_pw = f"LhfDemo#{suffix}"
 
     if "redshift" in sources:
         console.print(f"  [dim]デフォルト password: {default_pw}[/dim]")
@@ -490,6 +494,9 @@ def generate_tfvars(
     catalog_prefix: str,
     analysis_catalog: str,
     creds: dict,
+    *,
+    aws_region: str = "us-west-2",
+    azure_region: str = "westus2",
 ):
     """Generate terraform.tfvars from collected config."""
     lines = [
@@ -518,7 +525,10 @@ def generate_tfvars(
         f'databricks_host = "{workspace_url}"',
         "",
         "# AWS",
-        f'aws_region = "us-west-2"',
+        f'aws_region = "{aws_region}"',
+        "",
+        "# Azure",
+        f'azure_region = "{azure_region}"',
     ]
 
     # Auto-detect workspace default storage for Azure cross-tenant scenarios
@@ -1531,6 +1541,26 @@ def main():
     workspace_url = get_workspace_url()
     sources = select_sources(cloud)
     query_prefix, catalog_prefix, analysis_catalog = get_catalog_prefix()
+
+    # Region selection
+    default_aws_region = "us-west-2"
+    default_azure_region = "westus2"
+    aws_region = questionary.text(
+        f"AWS リージョン (空白 Enter = {default_aws_region}):",
+        default="",
+    ).ask()
+    aws_region = aws_region.strip() or default_aws_region
+
+    need_azure = any(s in sources for s in ("synapse", "postgres", "onelake")) or cloud == "azure"
+    if need_azure:
+        azure_region = questionary.text(
+            f"Azure リージョン (空白 Enter = {default_azure_region}):",
+            default="",
+        ).ask()
+        azure_region = azure_region.strip() or default_azure_region
+    else:
+        azure_region = default_azure_region
+
     auto_creds = check_cloud_auth(cloud, sources)
     setup_databricks_auth(workspace_url)
     creds = collect_credentials(cloud, sources, auto_creds)
@@ -1542,12 +1572,15 @@ def main():
     console.print(f"  Sources: {', '.join(sources)}")
     console.print(f"  Prefixes: {query_prefix} / {catalog_prefix}")
     console.print(f"  Analysis catalog: {analysis_catalog}")
+    console.print(f"  AWS region: {aws_region}")
+    if need_azure:
+        console.print(f"  Azure region: {azure_region}")
 
     if not questionary.confirm("\nデプロイを開始しますか?", default=True).ask():
         console.print("[yellow]Cancelled.[/yellow]")
         sys.exit(0)
 
-    generate_tfvars(cloud, workspace_url, sources, query_prefix, catalog_prefix, analysis_catalog, creds)
+    generate_tfvars(cloud, workspace_url, sources, query_prefix, catalog_prefix, analysis_catalog, creds, aws_region=aws_region, azure_region=azure_region)
     generate_notebook(sources, query_prefix, catalog_prefix, analysis_catalog=analysis_catalog)
     save_deploy_state(workspace_url, sources, query_prefix, catalog_prefix, analysis_catalog)
     run_terraform()

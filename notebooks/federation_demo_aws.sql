@@ -24,10 +24,10 @@
 
 -- COMMAND ----------
 
-DECLARE OR REPLACE query_prefix STRING DEFAULT 'lhf_xq37_demo_query';
-DECLARE OR REPLACE catalog_prefix STRING DEFAULT 'lhf_xq37_demo_catalog';
-DECLARE OR REPLACE db_prefix STRING DEFAULT 'lhf_xq37_demo';
-DECLARE OR REPLACE analysis_catalog STRING DEFAULT 'lhf_xq37_demo_union_dbx';
+DECLARE OR REPLACE query_prefix STRING DEFAULT 'lhf_pqa9_yao_query';
+DECLARE OR REPLACE catalog_prefix STRING DEFAULT 'lhf_pqa9_yao_catalog';
+DECLARE OR REPLACE db_prefix STRING DEFAULT 'lhf_pqa9_yao';
+DECLARE OR REPLACE analysis_catalog STRING DEFAULT 'lhf_pqa9_yao_union_dbx';
 
 -- COMMAND ----------
 

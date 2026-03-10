@@ -24,10 +24,10 @@
 
 -- COMMAND ----------
 
-CREATE WIDGET TEXT query_prefix DEFAULT 'lhf_dfek_demo_query';
-CREATE WIDGET TEXT catalog_prefix DEFAULT 'lhf_dfek_demo_catalog';
-CREATE WIDGET TEXT db_prefix DEFAULT 'lhf_dfek_demo';
-CREATE WIDGET TEXT analysis_catalog DEFAULT 'lhf_dfek_demo_union_dbx';
+CREATE WIDGET TEXT query_prefix DEFAULT 'lhf_pqa9_yao_query';
+CREATE WIDGET TEXT catalog_prefix DEFAULT 'lhf_pqa9_yao_catalog';
+CREATE WIDGET TEXT db_prefix DEFAULT 'lhf_pqa9_yao';
+CREATE WIDGET TEXT analysis_catalog DEFAULT 'lhf_pqa9_yao_union_dbx';
 
 -- COMMAND ----------
 
@@ -64,6 +64,30 @@ CREATE WIDGET TEXT analysis_catalog DEFAULT 'lhf_dfek_demo_union_dbx';
 -- MAGIC |------|------|--------|
 -- MAGIC | **Catalog Federation** | Glue, OneLake | メタデータ API 経由 → ストレージ直接読取 (Spark) |
 -- MAGIC | **Query Federation** | Redshift, PostgreSQL, Synapse, BigQuery | JDBC 経由でクエリをプッシュダウン |
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ---
+-- MAGIC ## 1.1 Catalog Federation: AWS Glue
+-- MAGIC
+-- MAGIC Glue Data Catalog のテーブルを Unity Catalog 経由で透過的に参照。
+-- MAGIC Databricks は **S3 上のデータを直接読み取り**、Spark エンジンで処理します。
+
+-- COMMAND ----------
+
+-- センサーマスタ (Parquet)
+SELECT * FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.sensors;
+
+-- COMMAND ----------
+
+-- 機械マスタ (Delta)
+SELECT * FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.machines;
+
+-- COMMAND ----------
+
+-- 品質検査 (Iceberg) — 3つのフォーマットを透過的に扱える
+SELECT * FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.quality_inspections;
 
 -- COMMAND ----------
 
@@ -192,6 +216,8 @@ event_summary AS (
   GROUP BY e.machine_id
 ),
 quality_all AS (
+  SELECT machine_id, result, defect_count FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.quality_inspections
+  UNION ALL
   SELECT machine_id, result, defect_count FROM ${query_prefix}_redshift.${db_prefix}.quality_inspections
 ),
 quality_agg AS (
@@ -216,7 +242,7 @@ SELECT
   COALESCE(qa.failed_inspections, 0) AS failed_inspection_count,
   COALESCE(qa.total_defects, 0) AS total_defect_count,
   ROUND(COALESCE(qa.passed_inspections, 0) * 100.0 / NULLIF(qa.total_inspections, 0), 1) AS quality_pass_rate_pct
-FROM ${query_prefix}_postgres.${db_prefix}.machines m
+FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.machines m
 LEFT JOIN sensor_summary ss ON m.machine_id = ss.machine_id
 LEFT JOIN event_summary es ON m.machine_id = es.machine_id
 LEFT JOIN quality_agg qa ON m.machine_id = qa.machine_id;
@@ -240,7 +266,7 @@ SELECT
   COUNT(ml.log_id) AS maintenance_log_count,
   COUNT(wo.order_id) AS work_order_count,
   COUNT(CASE WHEN wo.status = 'open' THEN 1 END) AS open_work_orders
-FROM ${query_prefix}_postgres.${db_prefix}.machines m
+FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.machines m
 LEFT JOIN ${query_prefix}_postgres.${db_prefix}.maintenance_logs ml ON m.machine_id = ml.machine_id
 LEFT JOIN ${query_prefix}_postgres.${db_prefix}.work_orders wo ON m.machine_id = wo.machine_id
 GROUP BY m.machine_id, m.machine_name
@@ -255,7 +281,7 @@ SELECT
   COUNT(DISTINCT ss.shift_id) AS total_shifts,
   ROUND(SUM(ec.kwh_consumed), 2) AS total_kwh,
   ROUND(SUM(ec.cost_usd), 2) AS total_energy_cost_usd
-FROM ${query_prefix}_postgres.${db_prefix}.machines m
+FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.machines m
 LEFT JOIN ${query_prefix}_synapse.${db_prefix}.shift_schedules ss ON m.machine_id = ss.machine_id
 LEFT JOIN ${query_prefix}_synapse.${db_prefix}.energy_consumption ec ON m.machine_id = ec.machine_id
 GROUP BY m.machine_id, m.machine_name
@@ -269,7 +295,7 @@ SELECT
   m.machine_name,
   COUNT(dr.record_id) AS downtime_incidents,
   ROUND(SUM(ca.amount_usd), 2) AS total_allocated_cost_usd
-FROM ${query_prefix}_postgres.${db_prefix}.machines m
+FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.machines m
 LEFT JOIN ${query_prefix}_bigquery.${db_prefix}_factory.downtime_records dr ON m.machine_id = dr.machine_id
 LEFT JOIN ${query_prefix}_bigquery.${db_prefix}_factory.cost_allocation ca ON m.machine_id = ca.machine_id
 GROUP BY m.machine_id, m.machine_name
@@ -289,11 +315,11 @@ CREATE OR REPLACE TABLE ${analysis_catalog}.${db_prefix}.factory_operations_unio
 WITH glue_base AS (
   SELECT
     m.machine_id, m.machine_name, m.production_line, m.factory, m.status AS machine_status
-  FROM ${query_prefix}_postgres.${db_prefix}.machines m
+  FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.machines m
 ),
 glue_quality AS (
   SELECT machine_id, COUNT(*) AS glue_inspection_count, SUM(defect_count) AS glue_defect_count
-  FROM ${query_prefix}_redshift.${db_prefix}.quality_inspections
+  FROM ${catalog_prefix}_glue.${db_prefix}_factory_master.quality_inspections
   GROUP BY machine_id
 ),
 redshift_sensors AS (

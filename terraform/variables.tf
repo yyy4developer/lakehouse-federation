@@ -127,7 +127,7 @@ variable "azure_subscription_id" {
 variable "azure_region" {
   description = "Azure region for resources"
   type        = string
-  default     = "eastus"
+  default     = "westus2"
 }
 
 variable "use_workspace_default_storage" {

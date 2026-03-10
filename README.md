@@ -139,6 +139,8 @@ gcloud iam service-accounts keys create ~/gcp-sa-key.json \
 | Workspace URL | `https://xxx.cloud.databricks.com` | 必須 |
 | Sources | チェックボックスで選択 | Glue は AWS のみ |
 | Prefix | 自動生成 (`lhf_xxxx`) | そのまま Enter で OK。変更も可 |
+| AWS region | 空白 Enter = `us-west-2` | 変更も可 |
+| Azure region | 空白 Enter = `westus2` | Azure ソース使用時のみ。`eastus` は Storage Account 上限に注意 |
 | AWS profile | SSO profile 名 | 例: `aws-sandbox-field-eng_databricks-sandbox-admin` |
 | Databricks auth | ブラウザが開く | OAuth U2M で自動認証 |
 | Passwords | 各ソース用 | Redshift/PostgreSQL/Synapse 選択時のみ |
@@ -187,6 +189,12 @@ terraform apply
 ## トラブルシューティング
 
 ### Azure 全般
+
+#### Storage Account 上限エラー (MaxStorageAccountsCountPerSubscriptionExceeded)
+
+**症状**: `MaxStorageAccountsCountPerSubscriptionExceeded` — 特定リージョンで Storage Account が 250 個の上限に達している
+
+**対策**: Azure リージョンを変更する（上限はリージョン単位）。デプロイ時の対話で `westus2` 等の別リージョンを指定するか、`terraform.tfvars` に `azure_region = "westus2"` を設定
 
 #### RBAC (ロール割り当て) の伝播遅延
 

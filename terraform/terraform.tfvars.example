@@ -35,7 +35,7 @@ postgres_admin_password = "PgPass123!"    # Required if enable_postgres = true
 
 # --- Azure (required if any Azure source enabled) ---
 # azure_subscription_id    = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-# azure_region             = "eastus"
+# azure_region             = "westus2"
 # azure_resource_group_name = "lhf-demo-rg"
 # synapse_admin_password   = "SynapsePass123!"
 
