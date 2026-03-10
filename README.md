@@ -123,7 +123,7 @@ gcloud iam service-accounts keys create ~/gcp-sa-key.json \
 
 デプロイ先の Databricks workspace URL が必要です (admin 権限が必要)。
 - 既存の workspace を使用可能 (sandbox 環境を推奨)
-- 新規作成する場合: Claude Code で `/databricks-fe-vm-workspace-deployment` を実行して FEVM で作成
+- 新規作成する場合: go/fevm で作成 (sandbox を推奨)
 
 ### 3. デプロイ実行
 
