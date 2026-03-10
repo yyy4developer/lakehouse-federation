@@ -78,8 +78,27 @@ sandbox 環境の使用を推奨します。
 |----------|--------------|------------|
 | AWS | Profile: `aws-sandbox-field-eng_databricks-sandbox-admin` | `aws sso login --profile aws-sandbox-field-eng_databricks-sandbox-admin` |
 | Azure | Subscription: `azure-sandbox-field-eng` (`edd4cc45-...`) | `az login` → `az account set -s azure-sandbox-field-eng` |
-| GCP | Project: `gcp-sandbox-field-eng` | `gcloud auth application-default login` → `gcloud config set project gcp-sandbox-field-eng` |
+| GCP | Project: `gcp-sandbox-field-eng` | 下記参照 |
 | Databricks | デプロイ時にブラウザ認証 (OAuth U2M) | 自動 |
+
+#### GCP 認証 (BigQuery 使用時)
+
+```bash
+# 1. gcloud CLI でログイン (ブラウザが開く)
+gcloud auth login
+
+# 2. Application Default Credentials を設定 (Terraform が使用)
+gcloud auth application-default login
+
+# 3. プロジェクトを設定
+gcloud config set project gcp-sandbox-field-eng
+# ※ "lacks an 'environment' tag" という警告が出ますが、無視して OK です
+#    最後に "Updated property [core/project]." と表示されれば成功です
+```
+
+> **Note**: `gcloud auth login` と `gcloud auth application-default login` は別の認証です。
+> 前者は gcloud CLI 用、後者は Terraform/SDK 用の ADC (Application Default Credentials) です。
+> BigQuery を使う場合は**両方**実行してください。
 
 #### BigQuery: GCP サービスアカウント key JSON
 
