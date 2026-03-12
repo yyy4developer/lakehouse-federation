@@ -15,7 +15,7 @@ from rich.table import Table
 
 from .auth import AuthManager, CredentialCollector
 from .cleanup import NotebookCleanup, SnowflakeCleanup
-from .config import SOURCES, console, random_suffix
+from .config import SOURCES, VERSION, console, random_suffix
 from .connectivity import ConnectivityTester
 from .dab import DABManager
 from .databricks import DatabricksClient
@@ -300,7 +300,7 @@ class Deployer:
     def _print_banner() -> None:
         console.print(Panel.fit(
             "[bold cyan]Lakehouse Federation Demo[/bold cyan]\n"
-            "[dim]Multi-cloud federation deployment tool[/dim]",
+            f"[dim]Multi-cloud federation deployment tool  v{VERSION}[/dim]",
             border_style="cyan",
         ))
 

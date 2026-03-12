@@ -16,6 +16,19 @@ from rich.console import Console
 console = Console()
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+
+def _read_version() -> str:
+    try:
+        for line in (PROJECT_ROOT / "pyproject.toml").read_text().splitlines():
+            if line.startswith("version"):
+                return line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return "0.0.0"
+
+
+VERSION = _read_version()
 TERRAFORM_DIR = PROJECT_ROOT / "terraform"
 NOTEBOOK_TEMPLATE = PROJECT_ROOT / "notebooks" / "federation_demo_template.sql"
 NOTEBOOK_OUTPUT = PROJECT_ROOT / "notebooks" / "federation_demo.sql"
