@@ -31,6 +31,8 @@ SOURCES = {
     "synapse":  {"label": "Azure Synapse (Query Federation)",   "type": "query",   "cloud_req": None},
     "bigquery": {"label": "Google BigQuery (Query Federation)", "type": "query",   "cloud_req": None},
     "onelake":  {"label": "OneLake / Fabric (Catalog Federation)", "type": "catalog", "cloud_req": "azure"},
+    "snowflake": {"label": "Snowflake (Query Federation)",        "type": "query",   "cloud_req": None},
+    "snowflake_iceberg": {"label": "Snowflake Iceberg (Catalog Federation via Glue)", "type": "catalog", "cloud_req": "aws"},
 }
 
 # Source -> table definitions (for deploy_result.md)
@@ -41,6 +43,8 @@ SOURCE_TABLES = {
     "synapse":  ["shift_schedules", "energy_consumption"],
     "bigquery": ["downtime_records", "cost_allocation"],
     "onelake":  ["production_plans", "inventory_levels"],
+    "snowflake": ["equipment_specs", "spare_parts_inventory"],
+    "snowflake_iceberg": ["operational_metrics", "safety_incidents"],
 }
 
 
@@ -58,6 +62,8 @@ SOURCE_SECTIONS = {
     "synapse":  ["1.4 Query Federation: Azure Synapse"],
     "bigquery": ["1.5 Query Federation: Google BigQuery"],
     "onelake":  ["1.6 Catalog Federation: Microsoft OneLake"],
+    "snowflake": ["1.7 Query Federation: Snowflake"],
+    "snowflake_iceberg": ["1.8 Catalog Federation: Snowflake Iceberg"],
 }
 
 # Chapter 2 cross-source JOIN section markers
@@ -408,6 +414,33 @@ def collect_credentials(cloud: str, sources: list[str], auto_creds: dict | None 
                 "Azure subscription ID:",
                 validate=lambda x: len(x) > 0 or "必須です",
             ).ask()
+
+    if "snowflake" in sources or "snowflake_iceberg" in sources:
+        console.print("\n[bold]Snowflake 設定[/bold]")
+        console.print("  [dim]Snowflake Trial: https://signup.snowflake.com (無料)[/dim]")
+        creds["snowflake_account_url"] = questionary.text(
+            "Snowflake account URL (例: https://cbbhrbb-tj15199.snowflakecomputing.com):",
+            validate=lambda x: len(x) > 0 or "必須です",
+        ).ask()
+        creds["snowflake_user"] = questionary.text(
+            "Snowflake ユーザー名:",
+            validate=lambda x: len(x) > 0 or "必須です",
+        ).ask()
+        pw = questionary.password(
+            "Snowflake password (空白 Enter = 自動生成):",
+        ).ask()
+        creds["snowflake_password"] = pw if pw else default_pw
+        wh = questionary.text(
+            "Snowflake warehouse (デフォルト: COMPUTE_WH):",
+            default="COMPUTE_WH",
+        ).ask()
+        creds["snowflake_warehouse"] = wh
+
+    if "snowflake_iceberg" in sources:
+        # Snowflake Iceberg requires Glue
+        if "glue" not in sources:
+            console.print("[yellow]⚠ Snowflake Iceberg は AWS Glue が必要です。Glue を自動有効化します。[/yellow]")
+            sources.append("glue")
 
     if "bigquery" in sources:
         default_project = creds.get("gcp_project_id", "")
@@ -1009,6 +1042,10 @@ def generate_deploy_result(
         synapse_ep = outputs.get("synapse_endpoint", "")
         synapse_ws_name = synapse_ep.replace("-ondemand.sql.azuresynapse.net", "") if synapse_ep else ""
         lines.append(f"| Azure Synapse Studio | https://web.azuresynapse.net?workspace={synapse_ws_name} |")
+    if "snowflake" in sources or "snowflake_iceberg" in sources:
+        sf_url = _read_tfvar("snowflake_account_url") or ""
+        if sf_url:
+            lines.append(f"| Snowflake | {sf_url} |")
     if "bigquery" in sources and gcp_project_id:
         bq_dataset = db_names.get("bigquery", "")
         lines.append(f"| BigQuery Console | https://console.cloud.google.com/bigquery?project={gcp_project_id}&d={bq_dataset}&p={gcp_project_id}&page=dataset |")
@@ -1048,7 +1085,7 @@ def generate_deploy_result(
             lines.append(f"│       {connector}── {t}")
 
     # Query Federation sources
-    for src in ["redshift", "postgres", "synapse", "bigquery"]:
+    for src in ["redshift", "postgres", "synapse", "bigquery", "snowflake"]:
         if src not in sources:
             continue
         cat_name = catalogs.get(src, f"{query_prefix}_{src}")
@@ -1113,6 +1150,14 @@ SOURCE_TEST_QUERIES = {
     "onelake": [
         ("production_plans", "{catalog_prefix}_onelake.default.production_plans", 20),
         ("inventory_levels", "{catalog_prefix}_onelake.default.inventory_levels", 30),
+    ],
+    "snowflake": [
+        ("equipment_specs", "{query_prefix}_snowflake.{db_prefix}.equipment_specs", 10),
+        ("spare_parts_inventory", "{query_prefix}_snowflake.{db_prefix}.spare_parts_inventory", 30),
+    ],
+    "snowflake_iceberg": [
+        ("operational_metrics", "{catalog_prefix}_glue.{db_prefix}_snowflake_iceberg.operational_metrics", 50),
+        ("safety_incidents", "{catalog_prefix}_glue.{db_prefix}_snowflake_iceberg.safety_incidents", 20),
     ],
 }
 

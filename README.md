@@ -37,6 +37,8 @@ Databricks Unity Catalog から Federation でクエリを実行します。
 | PostgreSQL | Query | O (RDS) | O (Azure Flexible) |
 | Azure Synapse | Query | O | O |
 | Google BigQuery | Query | O | O |
+| Snowflake | Query | O | O |
+| Snowflake Iceberg (via Glue) | Catalog | O | - |
 
 ## データテーマ: 工場生産管理
 
@@ -49,6 +51,8 @@ Databricks Unity Catalog から Federation でクエリを実行します。
 | PostgreSQL | machines, maintenance_logs, work_orders | 10/30/25 | 保守・作業管理 |
 | Synapse | shift_schedules, energy_consumption | 40/50 | シフト・電力 |
 | BigQuery | downtime_records, cost_allocation | 35/30 | 停止・コスト |
+| Snowflake | equipment_specs, spare_parts_inventory | 10/30 | 機器仕様・部品在庫 |
+| Snowflake Iceberg | operational_metrics, safety_incidents | 50/20 | OEE・安全インシデント |
 
 ---
 
@@ -371,7 +375,58 @@ lakehouse_federation/
 
 - [ ] **OneLake (Microsoft Fabric) 対応**: Catalog Federation で Fabric Lakehouse をソースとして追加 (Azure workspace のみ)
 - [ ] **deploy_result.md の精度向上**: カタログ/スキーマ構造をデプロイ後に Databricks API から動的取得して正確に反映
-- [ ] **Snowflake Iceberg 対応の復活**: 以前の Snowflake Iceberg テーブル → Glue Catalog Federation を再実装
+- [x] **Snowflake Query Federation**: Snowflake Trial アカウントへの Query Federation を追加
+- [x] **Snowflake Iceberg Catalog Federation**: Snowflake Iceberg → Glue CATALOG_SYNC → Databricks Catalog Federation
 - [ ] **Azure workspace での Glue Catalog Federation**: クロスクラウド Catalog Federation の検証
 - [ ] **CI/CD**: GitHub Actions で terraform validate / plan の自動チェック
 - [ ] **デモノートブックの自動生成改善**: テンプレートからの生成でデプロイ済みソースのみのセクションを動的に含める
+
+---
+
+## OneLake Federation の課題整理
+
+OneLake (Microsoft Fabric) Catalog Federation の実装を試みたが、以下の課題により一時保留中。
+
+### 実装済み（コードは `feature/multi-cloud-refactor` ブランチに存在）
+
+| コンポーネント | ファイル | 状態 |
+|---|---|---|
+| Terraform リソース定義 | `terraform/azure_onelake.tf` | ✅ 完了 |
+| Databricks Connection (`CONNECTION_ONELAKE`) | `terraform/databricks_connection.tf` | ✅ 完了 |
+| Databricks Catalog (Foreign) | `terraform/databricks_catalog.tf` | ✅ 完了 |
+| OneLake DFS アップロードスクリプト | `terraform/scripts/onelake_upload.py` | ✅ 完了 |
+| deploy.py への OneLake 統合 | `scripts/deploy.py` | ✅ 完了 |
+| variables / tfvars | `terraform/variables.tf` | ✅ 完了 |
+
+### 未解決の課題
+
+#### 1. クロステナント認証
+- Databricks workspace (sandbox テナント `bf465dc7`) と Fabric workspace (field-eng テナント `9f37a392`) が**別テナント**
+- Access Connector の Managed Identity はテナントをまたげないため、**Service Principal (SP)** が必要
+- SP (`lhf-demo-onelake-sp`, App ID: `46e1632a-0960-4b88-87c1-bb2361506f71`) を field-eng テナントに作成済み
+- **ブロッカー**: SP を Fabric workspace に追加するには workspace **Admin** 権限が必要だが、`team.fieldeng-all` は Contributor のみ。Admin は Isaac Gritz / James O'Keeffe のみ
+
+#### 2. Fabric テーブル認識
+- DFS REST API で Parquet + Delta log を直接アップロードしたが、Fabric UI でテーブルが「正体不明」と表示される
+- Fabric はテーブルの内部登録（Load Table API または Spark endpoint 経由）が必要な模様
+- Schema-enabled lakehouse では Load Table API が `UnsupportedOperationForSchemasEnabledLakehouse` エラー
+
+#### 3. Fabric 容量制限
+- Fabric REST API でのリソース作成に Pro/Trial ライセンスが必要（`UserNotLicensed` エラー）
+- 新規 Lakehouse 作成が容量上限で失敗（既存 Lakehouse `20e496bc` は使用可能）
+
+### 解決に向けた方針
+
+| 課題 | 対応案 |
+|---|---|
+| クロステナント認証 | (a) Fabric workspace Admin に SP 追加を依頼、(b) 同一テナント内に Databricks workspace を用意、(c) 自前の Fabric workspace を作成して Admin になる |
+| テーブル認識 | Fabric Spark endpoint または Notebook から `CREATE TABLE` を実行してテーブルを登録 |
+| 容量制限 | Fabric Trial ライセンスを取得、または既存 Lakehouse を再利用 |
+
+### テスト再開時の手順
+
+1. SP を Fabric workspace に Contributor として追加（Admin に依頼）
+2. Databricks storage credential を SP ベース（client_id/secret/tenant_id）に変更
+3. Fabric Notebook でテーブルを正式に登録
+4. `SHOW SCHEMAS IN <catalog>` で Federation 動作を確認
+5. 動作確認後、`az login` を sandbox テナントに戻して Terraform 実行

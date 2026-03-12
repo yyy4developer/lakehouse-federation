@@ -59,6 +59,18 @@ variable "enable_onelake" {
   default     = false
 }
 
+variable "enable_snowflake" {
+  description = "Enable Snowflake query federation"
+  type        = bool
+  default     = false
+}
+
+variable "enable_snowflake_iceberg" {
+  description = "Enable Snowflake Iceberg catalog federation (requires enable_glue = true)"
+  type        = bool
+  default     = false
+}
+
 # =============================================================================
 # Catalog Naming
 # =============================================================================
@@ -182,6 +194,45 @@ variable "postgres_admin_password" {
   description = "PostgreSQL admin password (min 8 chars)"
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+# =============================================================================
+# OneLake / Microsoft Fabric
+# =============================================================================
+
+# =============================================================================
+# Snowflake
+# =============================================================================
+
+variable "snowflake_account_url" {
+  description = "Snowflake account URL (e.g. https://abc12345.snowflakecomputing.com)"
+  type        = string
+  default     = ""
+}
+
+variable "snowflake_user" {
+  description = "Snowflake username"
+  type        = string
+  default     = ""
+}
+
+variable "snowflake_password" {
+  description = "Snowflake password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "snowflake_warehouse" {
+  description = "Snowflake warehouse name"
+  type        = string
+  default     = "COMPUTE_WH"
+}
+
+variable "snowflake_database" {
+  description = "Snowflake database name (leave empty for auto: upper(db_prefix)_FACTORY)"
+  type        = string
   default     = ""
 }
 

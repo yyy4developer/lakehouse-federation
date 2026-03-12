@@ -10,7 +10,7 @@ resource "databricks_connection" "glue" {
 
   options = {
     aws_region     = var.aws_region
-    aws_account_id = data.aws_caller_identity.current.account_id
+    aws_account_id = local.aws_account_id
     credential     = databricks_credential.glue_service[0].name
   }
 
@@ -84,6 +84,22 @@ resource "databricks_connection" "bigquery" {
   comment = "Connection to Google BigQuery"
 }
 
+# Snowflake (Query Federation)
+resource "databricks_connection" "snowflake" {
+  count           = var.enable_snowflake ? 1 : 0
+  name            = "${local.name_prefix}-snowflake-conn"
+  connection_type = "SNOWFLAKE"
+
+  options = {
+    host        = var.snowflake_account_url
+    user        = var.snowflake_user
+    password    = var.snowflake_password
+    sfWarehouse = var.snowflake_warehouse
+  }
+
+  comment = "Connection to Snowflake"
+}
+
 # OneLake / Microsoft Fabric (Catalog Federation)
 resource "databricks_connection" "onelake" {
   count           = var.enable_onelake ? 1 : 0
@@ -91,8 +107,11 @@ resource "databricks_connection" "onelake" {
   connection_type = "ONELAKE"
 
   options = {
-    host = "onelake.dfs.fabric.microsoft.com"
+    credential = databricks_storage_credential.catalog[0].name
+    workspace  = var.fabric_workspace_id
   }
 
   comment = "Connection to Microsoft OneLake (Fabric)"
+
+  depends_on = [databricks_storage_credential.catalog]
 }

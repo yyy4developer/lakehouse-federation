@@ -193,6 +193,45 @@ SELECT * FROM IDENTIFIER(catalog_prefix || '_onelake.default.inventory_levels');
 
 -- MAGIC %md
 -- MAGIC ---
+-- MAGIC ## 1.7 Query Federation: Snowflake
+-- MAGIC
+-- MAGIC Snowflake に Query Federation で接続し、
+-- MAGIC 機器仕様と部品在庫データを参照します。
+
+-- COMMAND ----------
+
+-- 機器仕様
+SELECT * FROM IDENTIFIER(query_prefix || '_snowflake.' || db_prefix || '.equipment_specs');
+
+-- COMMAND ----------
+
+-- 部品在庫
+SELECT * FROM IDENTIFIER(query_prefix || '_snowflake.' || db_prefix || '.spare_parts_inventory');
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ---
+-- MAGIC ## 1.8 Catalog Federation: Snowflake Iceberg (via Glue)
+-- MAGIC
+-- MAGIC Snowflake が管理する Iceberg テーブルを AWS Glue 経由で参照します。
+-- MAGIC Snowflake の CATALOG_SYNC で Glue にメタデータが同期され、
+-- MAGIC Databricks は S3 上の Iceberg データを直接読み取ります。
+
+-- COMMAND ----------
+
+-- 運用メトリクス (OEE: 総合設備効率)
+SELECT * FROM IDENTIFIER(catalog_prefix || '_glue.' || db_prefix || '_snowflake_iceberg.operational_metrics');
+
+-- COMMAND ----------
+
+-- 安全インシデント
+SELECT * FROM IDENTIFIER(catalog_prefix || '_glue.' || db_prefix || '_snowflake_iceberg.safety_incidents');
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ---
 -- MAGIC # 第2章: クロスソース分析とリネージ
 -- MAGIC
 -- MAGIC 複数の Federation ソースを **クロスソース JOIN** して分析テーブルを作成し、

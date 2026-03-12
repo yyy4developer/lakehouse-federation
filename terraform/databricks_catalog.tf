@@ -93,6 +93,23 @@ resource "databricks_catalog" "bigquery" {
 }
 
 # -----------------------------------------------------------------------------
+# Query Federation: Snowflake
+# -----------------------------------------------------------------------------
+resource "databricks_catalog" "snowflake" {
+  count           = var.enable_snowflake ? 1 : 0
+  name            = "${var.catalog_prefix_query}_snowflake"
+  connection_name = databricks_connection.snowflake[0].name
+
+  options = {
+    database = local.snowflake_db_name
+  }
+
+  comment = "外部カタログ: Snowflake 機器仕様・部品在庫データ（equipment_specs, spare_parts_inventory）"
+
+  lifecycle { ignore_changes = [connection_name] }
+}
+
+# -----------------------------------------------------------------------------
 # Union Catalog: Analysis results (machine_health_summary etc.)
 # On Azure: requires explicit storage_root (no metastore-level storage root)
 # -----------------------------------------------------------------------------
@@ -119,6 +136,10 @@ resource "databricks_catalog" "onelake" {
   count           = var.enable_onelake ? 1 : 0
   name            = "${var.catalog_prefix_catalog}_onelake"
   connection_name = databricks_connection.onelake[0].name
+
+  options = {
+    data_item = var.fabric_lakehouse_id
+  }
 
   comment = "外部カタログ: OneLake 生産計画・在庫データ（production_plans, inventory_levels）"
 

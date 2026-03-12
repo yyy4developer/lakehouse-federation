@@ -40,7 +40,7 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  skip_aws = !(var.enable_glue || var.enable_redshift || (var.enable_postgres && var.cloud == "aws"))
+  skip_aws = !(var.enable_glue || var.enable_redshift || var.enable_snowflake_iceberg || (var.enable_postgres && var.cloud == "aws"))
   skip_gcp = !var.enable_bigquery
 
   # Random suffix for multi-user uniqueness
@@ -58,6 +58,11 @@ locals {
   postgres_db_name  = "${local.db_prefix}_factory"
   synapse_db_name   = "${local.db_prefix}_factory"
   bigquery_dataset  = "${local.db_prefix}_factory"
+
+  # Snowflake (uppercase identifiers)
+  snowflake_db_name          = var.snowflake_database != "" ? var.snowflake_database : upper("${local.db_prefix}_factory")
+  snowflake_schema           = upper(local.db_prefix)
+  snowflake_iceberg_glue_db  = "${local.db_prefix}_snowflake_iceberg"
 
   # Custom schema name within each source database (replaces public/dbo)
   source_schema = local.db_prefix
