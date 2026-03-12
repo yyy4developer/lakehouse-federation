@@ -102,6 +102,7 @@ resource "aws_glue_job" "data_generator" {
   depends_on = [
     aws_s3_object.glue_script,
     aws_glue_catalog_database.factory_master,
+    aws_lakeformation_data_lake_settings.opt_out,
     aws_lakeformation_permissions.iam_database,
   ]
 }

@@ -5,10 +5,12 @@
 # then use the auto-generated external_id to build IAM trust policies.
 # =============================================================================
 
-data "aws_caller_identity" "current" {}
+data "aws_caller_identity" "current" {
+  count = local.skip_aws ? 0 : 1
+}
 
 locals {
-  aws_account_id = data.aws_caller_identity.current.account_id
+  aws_account_id = local.skip_aws ? "" : data.aws_caller_identity.current[0].account_id
 
   # Pre-compute role names (used to construct ARNs before roles exist)
   glue_role_name    = "${local.name_prefix}-databricks-glue"
@@ -133,6 +135,7 @@ resource "aws_iam_role_policy" "s3_read_access" {
         ]
         Resource = [
           "${aws_s3_bucket.glue_data[0].arn}/glue_factory_metadata/*",
+          "${aws_s3_bucket.glue_data[0].arn}/snowflake_iceberg_metadata/*",
         ]
       },
       {

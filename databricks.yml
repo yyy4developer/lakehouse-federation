@@ -3,8 +3,7 @@ bundle:
 
 sync:
   include:
-    - "notebooks/federation_demo_aws.sql"
-    - "notebooks/federation_demo_azure.sql"
+    - "notebooks/federation_demo.sql"
   exclude:
     - "terraform/**"
     - "scripts/**"

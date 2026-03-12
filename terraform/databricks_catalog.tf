@@ -21,7 +21,10 @@ resource "databricks_catalog" "glue" {
 
   lifecycle { ignore_changes = [connection_name] }
 
-  depends_on = [databricks_external_location.glue_data]
+  depends_on = [
+    databricks_external_location.glue_data,
+    null_resource.run_glue_job,
+  ]
 }
 
 # -----------------------------------------------------------------------------
@@ -107,6 +110,30 @@ resource "databricks_catalog" "snowflake" {
   comment = "外部カタログ: Snowflake 機器仕様・部品在庫データ（equipment_specs, spare_parts_inventory）"
 
   lifecycle { ignore_changes = [connection_name] }
+}
+
+# -----------------------------------------------------------------------------
+# Catalog Federation: Snowflake Iceberg
+# Databricks reads Snowflake's Iceberg metadata via CONNECTION_SNOWFLAKE,
+# then accesses data directly from S3 (no Snowflake compute needed).
+# -----------------------------------------------------------------------------
+resource "databricks_catalog" "snowflake_iceberg" {
+  count           = var.enable_snowflake_iceberg ? 1 : 0
+  name            = "${var.catalog_prefix_catalog}_snowflake_iceberg"
+  connection_name = databricks_connection.snowflake[0].name
+
+  options = {
+    database         = local.snowflake_iceberg_db_name
+    authorized_paths = "s3://${aws_s3_bucket.glue_data[0].id}/snowflake_iceberg"
+  }
+
+  storage_root = "s3://${aws_s3_bucket.glue_data[0].id}/snowflake_iceberg_metadata"
+
+  comment = "外部カタログ: Snowflake Iceberg OEE・安全データ（operational_metrics, safety_incidents）"
+
+  lifecycle { ignore_changes = [connection_name] }
+
+  depends_on = [databricks_external_location.glue_data]
 }
 
 # -----------------------------------------------------------------------------

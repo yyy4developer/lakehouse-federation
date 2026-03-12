@@ -212,21 +212,21 @@ SELECT * FROM IDENTIFIER(query_prefix || '_snowflake.' || db_prefix || '.spare_p
 
 -- MAGIC %md
 -- MAGIC ---
--- MAGIC ## 1.8 Catalog Federation: Snowflake Iceberg (via Glue)
+-- MAGIC ## 1.8 Catalog Federation: Snowflake Iceberg
 -- MAGIC
--- MAGIC Snowflake が管理する Iceberg テーブルを AWS Glue 経由で参照します。
--- MAGIC Snowflake の CATALOG_SYNC で Glue にメタデータが同期され、
--- MAGIC Databricks は S3 上の Iceberg データを直接読み取ります。
+-- MAGIC Snowflake が管理する Iceberg テーブルを **Catalog Federation** で参照します。
+-- MAGIC Databricks は Snowflake からメタデータを取得し、S3 上の Iceberg データを直接読み取ります。
+-- MAGIC （Snowflake compute は不要 — Query Federation より高速）
 
 -- COMMAND ----------
 
 -- 運用メトリクス (OEE: 総合設備効率)
-SELECT * FROM IDENTIFIER(catalog_prefix || '_glue.' || db_prefix || '_snowflake_iceberg.operational_metrics');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_snowflake_iceberg.' || db_prefix || '.operational_metrics');
 
 -- COMMAND ----------
 
 -- 安全インシデント
-SELECT * FROM IDENTIFIER(catalog_prefix || '_glue.' || db_prefix || '_snowflake_iceberg.safety_incidents');
+SELECT * FROM IDENTIFIER(catalog_prefix || '_snowflake_iceberg.' || db_prefix || '.safety_incidents');
 
 -- COMMAND ----------
 
@@ -505,7 +505,7 @@ ORDER BY machine_id;
 -- COMMAND ----------
 
 -- Federation カタログの権限一覧を確認
-EXECUTE IMMEDIATE 'SHOW GRANTS ON CATALOG ' || query_prefix || '_redshift';
+EXECUTE IMMEDIATE 'SHOW GRANTS ON CATALOG ' || catalog_prefix || '_glue';
 
 -- COMMAND ----------
 
@@ -562,7 +562,7 @@ EXECUTE IMMEDIATE 'SHOW GRANTS ON CATALOG ' || query_prefix || '_redshift';
 -- MAGIC
 -- MAGIC | 章 | 実演内容 |
 -- MAGIC |----|---------|
--- MAGIC | **第1章** | 最大 6 ソース (Glue, Redshift, PostgreSQL, Synapse, BigQuery, OneLake) を Federation で統合 |
+-- MAGIC | **第1章** | 最大 8 ソース (Glue, Redshift, PostgreSQL, Synapse, BigQuery, OneLake, Snowflake, Snowflake Iceberg) を Federation で統合 |
 -- MAGIC | **第2章** | クロスソース JOIN → `factory_operations_union` 作成 → リネージ可視化 |
 -- MAGIC | **第3章** | Federation カタログへの GRANT / REVOKE によるアクセス制御 |
 -- MAGIC | **第4章** | Genie で自然言語データ探索 |

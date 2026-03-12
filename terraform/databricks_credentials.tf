@@ -11,7 +11,7 @@ resource "databricks_credential" "glue_service" {
   purpose = "SERVICE"
 
   aws_iam_role {
-    role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.glue_role_name}"
+    role_arn = "arn:aws:iam::${local.aws_account_id}:role/${local.glue_role_name}"
   }
 
   comment = "Service credential for AWS Glue API access"
@@ -23,7 +23,7 @@ resource "databricks_storage_credential" "glue_storage" {
   name  = "${local.name_prefix}-glue-storage-cred"
 
   aws_iam_role {
-    role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.storage_role_name}"
+    role_arn = "arn:aws:iam::${local.aws_account_id}:role/${local.storage_role_name}"
   }
 
   comment = "Storage credential for Glue S3 data access"

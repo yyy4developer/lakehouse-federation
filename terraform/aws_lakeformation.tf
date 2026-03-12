@@ -1,21 +1,10 @@
 # =============================================================================
 # AWS Lake Formation Permissions
-# Grants IAM_ALLOWED_PRINCIPALS on databases to opt out of Lake Formation
+# Opt out of Lake Formation for Glue tables so they're accessible via IAM
 # =============================================================================
 
-resource "aws_lakeformation_permissions" "iam_database" {
-  count = var.enable_glue ? 1 : 0
-
-  principal   = "IAM_ALLOWED_PRINCIPALS"
-  permissions = ["ALL"]
-
-  database {
-    name = aws_glue_catalog_database.factory_master[0].name
-  }
-}
-
-# Opt out of Lake Formation for this database entirely
-# This ensures all tables (including those created by Glue ETL) are accessible via IAM
+# Set default permissions BEFORE any tables are created
+# This ensures Glue ETL-created tables automatically get IAM_ALLOWED_PRINCIPALS
 resource "aws_lakeformation_data_lake_settings" "opt_out" {
   count = var.enable_glue ? 1 : 0
 
@@ -27,4 +16,17 @@ resource "aws_lakeformation_data_lake_settings" "opt_out" {
     principal   = "IAM_ALLOWED_PRINCIPALS"
     permissions = ["ALL"]
   }
+}
+
+resource "aws_lakeformation_permissions" "iam_database" {
+  count = var.enable_glue ? 1 : 0
+
+  principal   = "IAM_ALLOWED_PRINCIPALS"
+  permissions = ["ALL"]
+
+  database {
+    name = aws_glue_catalog_database.factory_master[0].name
+  }
+
+  depends_on = [aws_lakeformation_data_lake_settings.opt_out]
 }

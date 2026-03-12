@@ -18,10 +18,6 @@ terraform {
       source  = "databricks/databricks"
       version = "~> 1.58"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.0"
-    }
     null = {
       source  = "hashicorp/null"
       version = "~> 3.0"
@@ -33,18 +29,13 @@ terraform {
   }
 }
 
-resource "random_string" "suffix" {
-  length  = 4
-  special = false
-  upper   = false
-}
-
 locals {
-  skip_aws = !(var.enable_glue || var.enable_redshift || var.enable_snowflake_iceberg || (var.enable_postgres && var.cloud == "aws"))
-  skip_gcp = !var.enable_bigquery
+  skip_aws   = !(var.enable_glue || var.enable_redshift || var.enable_snowflake_iceberg || (var.enable_postgres && var.cloud == "aws"))
+  skip_azure = !(var.enable_synapse || (var.enable_postgres && var.cloud == "azure"))
+  skip_gcp   = !var.enable_bigquery
 
-  # Random suffix for multi-user uniqueness
-  suffix = random_string.suffix.result
+  # Suffix for multi-user uniqueness (passed from deploy.py, extracted from catalog prefix)
+  suffix = var.resource_suffix
 
   # Resource naming prefixes (suffix ensures no collisions between users)
   name_prefix         = "${var.project_prefix}-${local.suffix}"                  # lhf-demo-xbmx
@@ -61,6 +52,7 @@ locals {
 
   # Snowflake (uppercase identifiers)
   snowflake_db_name          = var.snowflake_database != "" ? var.snowflake_database : upper("${local.db_prefix}_factory")
+  snowflake_iceberg_db_name  = upper("${local.db_prefix}_iceberg")
   snowflake_schema           = upper(local.db_prefix)
   snowflake_iceberg_glue_db  = "${local.db_prefix}_snowflake_iceberg"
 
@@ -90,7 +82,7 @@ provider "aws" {
 # -----------------------------------------------------------------------------
 provider "azurerm" {
   features {}
-  subscription_id                 = var.azure_subscription_id != "" ? var.azure_subscription_id : "00000000-0000-0000-0000-000000000000"
+  subscription_id                 = var.azure_subscription_id != "" ? var.azure_subscription_id : null
   resource_provider_registrations = "none"
 }
 

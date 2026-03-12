@@ -54,6 +54,7 @@ output "database_names" {
     var.enable_synapse ? { synapse = local.synapse_db_name } : {},
     var.enable_bigquery ? { bigquery = local.bigquery_dataset } : {},
     var.enable_snowflake ? { snowflake = local.snowflake_db_name } : {},
+    var.enable_snowflake_iceberg ? { snowflake_iceberg = local.snowflake_iceberg_db_name } : {},
   )
 }
 
@@ -79,5 +80,6 @@ output "databricks_catalogs" {
     var.enable_bigquery && var.gcp_credentials_json != "" ? { bigquery = databricks_catalog.bigquery[0].name } : {},
     var.enable_onelake ? { onelake = databricks_catalog.onelake[0].name } : {},
     var.enable_snowflake ? { snowflake = databricks_catalog.snowflake[0].name } : {},
+    var.enable_snowflake_iceberg ? { snowflake_iceberg = databricks_catalog.snowflake_iceberg[0].name } : {},
   )
 }

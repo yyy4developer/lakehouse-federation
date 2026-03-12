@@ -99,6 +99,12 @@ variable "db_prefix" {
   default     = ""
 }
 
+variable "resource_suffix" {
+  description = "Suffix for AWS/Azure resource names (shared with catalog prefix for consistency)"
+  type        = string
+  default     = ""
+}
+
 # =============================================================================
 # Databricks
 # =============================================================================

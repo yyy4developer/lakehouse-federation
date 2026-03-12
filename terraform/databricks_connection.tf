@@ -91,7 +91,7 @@ resource "databricks_connection" "snowflake" {
   connection_type = "SNOWFLAKE"
 
   options = {
-    host        = var.snowflake_account_url
+    host        = replace(replace(var.snowflake_account_url, "https://", ""), "http://", "")
     user        = var.snowflake_user
     password    = var.snowflake_password
     sfWarehouse = var.snowflake_warehouse

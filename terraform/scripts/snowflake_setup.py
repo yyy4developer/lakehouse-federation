@@ -86,27 +86,9 @@ def main():
         cur.execute("TRUNCATE TABLE IF EXISTS spare_parts_inventory")
         execute_sql_file(cur, os.path.join(sql_dir, "insert_spare_parts_inventory.sql"))
 
-        # Add comments
+        # Add comments (Snowflake supports COMMENT ON TABLE/COLUMN natively)
         print("  Adding table/column comments...")
-        comments_file = os.path.join(sql_dir, "comments.sql")
-        with open(comments_file) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("--"):
-                    # Snowflake uses ALTER TABLE ... SET COMMENT syntax, not COMMENT ON
-                    # Convert: COMMENT ON TABLE tbl IS 'msg' -> ALTER TABLE tbl SET COMMENT = 'msg'
-                    # Convert: COMMENT ON COLUMN tbl.col IS 'msg' -> ALTER TABLE tbl ALTER COLUMN col SET COMMENT 'msg'
-                    if line.startswith("COMMENT ON TABLE "):
-                        parts = line.replace("COMMENT ON TABLE ", "").split(" IS ", 1)
-                        table_name = parts[0].strip()
-                        comment_val = parts[1].rstrip(";").strip()
-                        cur.execute(f"ALTER TABLE {table_name} SET COMMENT = {comment_val}")
-                    elif line.startswith("COMMENT ON COLUMN "):
-                        parts = line.replace("COMMENT ON COLUMN ", "").split(" IS ", 1)
-                        col_ref = parts[0].strip()  # table.column
-                        comment_val = parts[1].rstrip(";").strip()
-                        table_name, col_name = col_ref.rsplit(".", 1)
-                        cur.execute(f"ALTER TABLE {table_name} ALTER COLUMN {col_name} SET COMMENT {comment_val}")
+        execute_sql_file(cur, os.path.join(sql_dir, "comments.sql"))
 
         # Verify
         cur.execute("SELECT COUNT(*) FROM equipment_specs")
